@@ -104,6 +104,15 @@ export default function NewChatPage() {
   const [repoSearch, setRepoSearch] = useState<string>("");
   const [branchSearch, setBranchSearch] = useState<string>("");
 
+  const [isLocalhost, setIsLocalhost] = useState(false);
+  useEffect(() => {
+    setIsLocalhost(
+      typeof window !== "undefined" &&
+        (window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1")
+    );
+  }, []);
+
   const isDemoMode = searchParams.get("demo") === "true";
 
 
@@ -257,6 +266,7 @@ export default function NewChatPage() {
           "Integrate payment processing with Stripe. Add a checkout page with credit card validation, handle webhooks for payment status updates, and create an admin dashboard to view transactions.",
         debug:
           "Explore the tool with a pre-configured fraud detection pipeline demo showcasing the full workflow. This demo will walk you through the complete process of building, analyzing, and implementing a feature.",
+        spec_gen: "Generate a spec for a new feature based on the codebase.",
         code: "Add Redis caching to the get_user_subscription method with a 60-minute TTL",
       };
       const demoIdea = state.selectedAgent
@@ -531,6 +541,7 @@ export default function NewChatPage() {
         } else if (
           (state.selectedAgent === "ask" ||
             state.selectedAgent === "debug" ||
+            state.selectedAgent === "spec_gen") &&
             state.selectedAgent === "code") &&
           projectId &&
           state.input.trim()
@@ -753,6 +764,7 @@ export default function NewChatPage() {
           } else if (
             (state.selectedAgent === "ask" ||
               state.selectedAgent === "debug" ||
+              state.selectedAgent === "spec_gen") &&
               state.selectedAgent === "code") &&
             projectId &&
             state.input.trim()
@@ -899,6 +911,11 @@ export default function NewChatPage() {
     await parseRepo(repoName, branchName);
   };
 
+  const createConversationAndNavigate = async (projectId: string) => {
+    const chatAgents = ["ask", "debug", "spec_gen"];
+    if (
+      !state.selectedAgent ||
+      !chatAgents.includes(state.selectedAgent)
   const createConversationAndNavigate = async (
     projectId: string,
     repoName?: string,
@@ -919,6 +936,7 @@ export default function NewChatPage() {
       const agentIdMap: Record<string, string> = {
         ask: "codebase_qna_agent",
         debug: "debugging_agent",
+        spec_gen: "spec_generation_agent",
         code: "code_generation_agent",
       };
       const agentId = agentIdMap[state.selectedAgent];
@@ -929,6 +947,9 @@ export default function NewChatPage() {
       const title =
         state.selectedAgent === "ask"
           ? "Codebase Q&A Chat"
+          : state.selectedAgent === "debug"
+            ? "Debug Chat"
+            : "Spec Generation Chat";
           : state.selectedAgent === "code"
             ? "Code Generation Chat"
             : "Debug Chat";
@@ -1001,6 +1022,7 @@ export default function NewChatPage() {
     if (
       state.selectedAgent === "ask" ||
       state.selectedAgent === "debug" ||
+      state.selectedAgent === "spec_gen"
       state.selectedAgent === "code"
     ) {
       if (!state.projectId) {
@@ -1166,6 +1188,7 @@ export default function NewChatPage() {
     if (
       state.selectedAgent === "ask" ||
       state.selectedAgent === "debug" ||
+      state.selectedAgent === "spec_gen"
       state.selectedAgent === "code"
     ) {
       if (!state.selectedRepo || !state.selectedBranch) {
@@ -1303,6 +1326,7 @@ export default function NewChatPage() {
               onRetryBranches={refetchBranches}
               selectedAgent={state.selectedAgent}
               onAgentSelect={handleAgentSelect}
+              showSpecGenOption={isLocalhost}
               onParseRepo={handleParseRepo}
               onParseRepoWithName={(repoName: string, branchName: string) => {
                 // Try to find a matching repo in the repositories array and update state
