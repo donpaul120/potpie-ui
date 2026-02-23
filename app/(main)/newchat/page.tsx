@@ -275,17 +275,29 @@ export default function NewChatPage() {
     };
   }, [refetchRepos, refetchProjects]);
 
-  // Sync linkedRepos from query; avoid clearing the list when we have a selection and
-  // the query returns empty (e.g. during refetch when search is cleared on Send/dropdown close),
-  // so the selected repo does not appear to "lose" its state in the UI.
+  // Sync linkedRepos from query; avoid clearing or replacing the list when we have a
+  // selection that would disappear only on non-search refetches (e.g. refetch on Send/
+  // dropdown close). When the user is actively searching (debouncedRepoSearch set), allow
+  // linkedRepos to update so search results show normally (including empty results).
   useEffect(() => {
     setState((prev) => {
-      if (repositories.length === 0 && prev.selectedRepo) {
+      if (
+        repositories.length === 0 &&
+        prev.selectedRepo &&
+        debouncedRepoSearch === ""
+      ) {
+        return prev;
+      }
+      if (
+        debouncedRepoSearch === "" &&
+        prev.selectedRepo &&
+        !repositories.some((r: Repo) => r.id?.toString() === prev.selectedRepo)
+      ) {
         return prev;
       }
       return { ...prev, linkedRepos: repositories };
     });
-  }, [repositories]);
+  }, [repositories, debouncedRepoSearch]);
 
   useEffect(() => {
     if (isDemoMode && repositories.length > 0) {
@@ -1315,7 +1327,7 @@ export default function NewChatPage() {
               }
               onKeyDown={handleKeyDown}
               textareaRef={textareaRef}
-              loading={state.loading}
+              loading={state.loading || state.parsing}
               onSubmit={handleSubmit}
               selectedRepo={state.selectedRepo}
               onRepoSelect={handleRepoSelect}

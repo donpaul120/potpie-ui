@@ -595,7 +595,7 @@ export default function IdeaInputCard({
                     <DropdownMenuItem
                       onClick={() => {
                         setRepoDropdownOpen(false);
-                        onParseRepo?.();
+                        openGithubPopup();
                       }}
                       className="flex items-center gap-2 px-2.5 py-2.5 cursor-pointer rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
                     >
