@@ -45,6 +45,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { AppDispatch } from "@/lib/state/store";
 import { RootState } from "@/lib/state/store";
 import { setRepoAndBranchForTask } from "@/lib/state/Reducers/RepoAndBranch";
+import JSZip from "jszip";
 import TaskSplittingService from "@/services/TaskSplittingService";
 import PlanService from "@/services/PlanService";
 import SpecService from "@/services/SpecService";
@@ -946,7 +947,6 @@ export default function VerticalTaskExecution() {
       return;
     }
     try {
-      const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
       for (const { path, content } of files) {
         zip.file(path, content);

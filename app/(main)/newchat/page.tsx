@@ -218,19 +218,19 @@ export default function NewChatPage() {
 
   // Sync linkedRepos from query; avoid clearing or replacing the list when we have a
   // selection that would disappear only on non-search refetches (e.g. refetch on Send/
-  // dropdown close). When the user is actively searching (debouncedRepoSearch set), allow
+  // dropdown close). When the user is actively searching (repoSearch set), allow
   // linkedRepos to update so search results show normally (including empty results).
   useEffect(() => {
     setState((prev) => {
       if (
         repositories.length === 0 &&
         prev.selectedRepo &&
-        debouncedRepoSearch === ""
+        repoSearch === ""
       ) {
         return prev;
       }
       if (
-        debouncedRepoSearch === "" &&
+        repoSearch === "" &&
         prev.selectedRepo &&
         !repositories.some((r: Repo) => r.id?.toString() === prev.selectedRepo)
       ) {
@@ -238,7 +238,7 @@ export default function NewChatPage() {
       }
       return { ...prev, linkedRepos: repositories };
     });
-  }, [repositories, debouncedRepoSearch]);
+  }, [repositories, repoSearch]);
 
   useEffect(() => {
     if (isDemoMode && repositories.length > 0) {
