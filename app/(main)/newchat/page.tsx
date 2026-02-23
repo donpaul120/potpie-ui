@@ -56,6 +56,8 @@ interface NewChatPageState {
   parsingStatus: string;
   attachmentIds: string[];
   attachmentUploading: boolean;
+  /** True while creating conversation after parsing (Ask/Debug/Code) to avoid UX gap */
+  creatingConversation: boolean;
 }
 
 const PARSING_STEPS = [
@@ -96,6 +98,7 @@ export default function NewChatPage() {
     parsingStatus: "",
     attachmentIds: [],
     attachmentUploading: false,
+    creatingConversation: false,
   });
 
   const [repoSearchTerm, setRepoSearchTerm] = useState<string>("");
@@ -594,11 +597,14 @@ export default function NewChatPage() {
           projectId &&
           state.input.trim()
         ) {
-          await createConversationAndNavigate(
+          setState((prev) => ({ ...prev, creatingConversation: true }));
+          const ok = await createConversationAndNavigate(
             projectId,
             repoName.trim(),
             branchName || "main"
           );
+          if (!ok)
+            setState((prev) => ({ ...prev, creatingConversation: false }));
         }
         // Refetch repos and auto-select the parsed repo in the repo field
         try {
@@ -813,11 +819,14 @@ export default function NewChatPage() {
             projectId &&
             state.input.trim()
           ) {
-            await createConversationAndNavigate(
+            setState((prev) => ({ ...prev, creatingConversation: true }));
+            const ok = await createConversationAndNavigate(
               projectId,
               repoName.trim(),
               branchName || "main"
             );
+            if (!ok)
+              setState((prev) => ({ ...prev, creatingConversation: false }));
           }
           // Refetch repos and auto-select the parsed repo in the repo field
           try {
@@ -956,17 +965,17 @@ export default function NewChatPage() {
     projectId: string,
     repoName?: string,
     branchName?: string
-  ) => {
+  ): Promise<boolean> => {
     if (
       !state.selectedAgent ||
       (state.selectedAgent !== "ask" &&
         state.selectedAgent !== "debug" &&
         state.selectedAgent !== "code")
     )
-      return;
+      return false;
     if (!user?.uid) {
       toast.error("Please sign in to continue");
-      return;
+      return false;
     }
     try {
       const agentIdMap: Record<string, string> = {
@@ -977,7 +986,7 @@ export default function NewChatPage() {
       const agentId = agentIdMap[state.selectedAgent];
       if (!agentId) {
         toast.error("Invalid agent selection");
-        return;
+        return false;
       }
       const title =
         state.selectedAgent === "ask"
@@ -1006,11 +1015,13 @@ export default function NewChatPage() {
         dispatch(setPendingMessage(getCleanInput(state.input)));
       }
       router.push(`/chat/${conversationResponse.conversation_id}`);
+      return true;
     } catch (error: any) {
       console.error("Failed to create conversation:", error);
       toast.error(
         error.message || "Failed to create conversation. Please try again."
       );
+      return false;
     }
   };
 
@@ -1143,7 +1154,7 @@ export default function NewChatPage() {
       toast.error("Please select an agent (Ask, Build, Code, or Debug)");
       return;
     }
-    if (state.loading) return;
+    if (state.loading || state.creatingConversation) return;
     setState((prev) => ({ ...prev, loading: true }));
     if (state.selectedAgent === "build") {
       if (!state.selectedRepo) {
@@ -1240,8 +1251,19 @@ export default function NewChatPage() {
         state.selectedBranch || selectedRepoData.default_branch || "main";
       const projectId = await getProjectIdForRepo(repoName, branchName);
       if (projectId) {
-        setState((prev) => ({ ...prev, loading: false, projectId }));
-        await createConversationAndNavigate(projectId, repoName, branchName);
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          projectId,
+          creatingConversation: true,
+        }));
+        const ok = await createConversationAndNavigate(
+          projectId,
+          repoName,
+          branchName
+        );
+        if (!ok)
+          setState((prev) => ({ ...prev, creatingConversation: false }));
         return;
       }
       setState((prev) => ({ ...prev, loading: false }));
@@ -1327,7 +1349,7 @@ export default function NewChatPage() {
               }
               onKeyDown={handleKeyDown}
               textareaRef={textareaRef}
-              loading={state.loading || state.parsing}
+              loading={state.loading || state.parsing || state.creatingConversation}
               onSubmit={handleSubmit}
               selectedRepo={state.selectedRepo}
               onRepoSelect={handleRepoSelect}
