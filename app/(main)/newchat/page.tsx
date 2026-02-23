@@ -1321,7 +1321,7 @@ export default function NewChatPage() {
               }
               onKeyDown={handleKeyDown}
               textareaRef={textareaRef}
-              loading={state.loading}
+              loading={state.loading || state.parsing}
               onSubmit={handleSubmit}
               selectedRepo={state.selectedRepo}
               onRepoSelect={handleRepoSelect}
