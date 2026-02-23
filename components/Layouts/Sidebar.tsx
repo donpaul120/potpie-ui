@@ -377,27 +377,38 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <ProFeatureModal open={proModalOpen} onOpenChange={setProModalOpen} />
-      <SidebarFooter className="flex flex-col gap-0">
-        <SidebarSeparator className="my-0" />
-        {!subscriptionLoading && userSubscription && open && (
-          <div className="px-4 pt-3 pb-1">
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <span className="text-xs text-[#747575]">
-                {usedCredits} / {maxCredits} messages
-              </span>
+      {!subscriptionLoading && userSubscription && open && (
+          <div className="px-4 pt-3 pb-3">
+            <div className="bg-white rounded-lg border border-zinc-200 p-3">
+              <p className="text-sm font-medium text-[#00291C] mb-1">
+                {userSubscription?.plan_type === planTypesEnum.PRO ? "Pro Plan" : "Free Plan"}
+              </p>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <span className="text-xs text-zinc-500">Credits used</span>
+                <span className="text-xs text-zinc-700">
+                  {usedCredits}/{maxCredits}
+                </span>
+              </div>
+              <Progress.Root
+                value={progress}
+                className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 mb-3"
+              >
+                <Progress.Indicator
+                  className="h-full bg-zinc-900 transition-[width] duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </Progress.Root>
+              <button
+                onClick={() => setProModalOpen(true)}
+                className="w-full py-2 px-4 rounded-lg border border-zinc-300 bg-white text-xs font-medium text-[#00291C] hover:bg-zinc-50 transition-colors"
+              >
+                UPDATE
+              </button>
             </div>
-            <Progress.Root
-              value={progress}
-              className="h-1.5 w-full overflow-hidden rounded-full bg-[#E5EAE8]"
-            >
-              <Progress.Indicator
-                className="h-full bg-primary transition-[width] duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </Progress.Root>
           </div>
         )}
+      <ProFeatureModal open={proModalOpen} onOpenChange={setProModalOpen} />
+      <SidebarFooter className="flex flex-col gap-0">
         <div className="pt-2">
           <NavUser
             user={{
