@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { CalendarIcon, Plus, TrendingUp } from "lucide-react";
+import axios from "axios";
+import { CalendarIcon, Plus } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -14,52 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/sonner";
-import SettingsService, { TokensByDayItem } from "@/services/SettingsService";
-
-const CHART_COLORS = ["#bbf7d0", "#4ade80", "#3b6fa0", "#1e1b4b", "#6366f1", "#f59e0b"];
-
-function formatDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function getDateRange(range: string): { startDate: string; endDate: string } {
-  const today = new Date();
-  const end = formatDate(today);
-  if (range === "today") return { startDate: end, endDate: end };
-  const start = new Date(today);
-  start.setDate(start.getDate() - (range === "last_week" ? 6 : 29));
-  return { startDate: formatDate(start), endDate: end };
-}
-
-function buildChartData(items: TokensByDayItem[]) {
-  const dates = [...new Set(items.map((i) => i.date))].sort();
-  const labels = dates.map((d) => {
-    const dt = new Date(d + "T00:00:00");
-    return `${dt.getDate()} ${dt.toLocaleString("en", { month: "short" }).toUpperCase()}`;
-  });
-
-  const dateIndex = new Map(dates.map((d, i) => [d, i]));
-  const projectMap = new Map<string, number[]>();
-
-  for (const item of items) {
-    const key = item.project_id ?? "__others__";
-    if (!projectMap.has(key)) projectMap.set(key, new Array(dates.length).fill(0));
-    projectMap.get(key)![dateIndex.get(item.date)!] = item.total_tokens;
-  }
-
-  // Put "Others" (null project_id) last
-  const entries = [...projectMap.entries()].sort(([a], [b]) =>
-    a === "__others__" ? 1 : b === "__others__" ? -1 : 0
-  );
-
-  const datasets = entries.map(([pid, data], i) => ({
-    label: pid === "__others__" ? "Others" : `Project ${i + 1}`,
-    data,
-    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
-  }));
-
-  return { labels, datasets };
-}
+import getHeaders from "@/app/utils/headers.util";
+import SettingsService, {
+  type TokensByDayItem,
+  type AnalyticsSummary,
+} from "@/services/SettingsService";
 
 const StackedBarChart = dynamic(() => import("./StackedBarChart"), {
   ssr: false,
@@ -70,6 +30,8 @@ const StackedBarChart = dynamic(() => import("./StackedBarChart"), {
   ),
 });
 
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+
 // ── Heatmap helpers ────────────────────────────────────────────────────────────
 function intensityColor(val: number): string {
   if (val === 0) return "#e5e7eb";
@@ -79,12 +41,70 @@ function intensityColor(val: number): string {
   return "#059669";
 }
 
-const intensityData: number[][] = [
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0.2, 0, 0.3, 0],
-  [0, 0, 0, 0.1, 0, 0, 0, 0, 0, 0, 0.6, 0, 0],
-  [0, 0.2, 0, 0.4, 0, 0.7, 0.8, 0.9, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0.1, 0, 0, 0.7, 0.8, 0, 0, 0, 0],
-];
+const HEATMAP_ROWS = 4;
+const HEATMAP_COLS = 7;
+
+/** Build heatmap grid from daily token usage. Each cell = that day's tokens normalized 0–1 by max in period. */
+function buildIntensityData(
+  dailyTokens: { date: string; tokens: number }[]
+): number[][] {
+  const sorted = [...dailyTokens].sort((a, b) => a.date.localeCompare(b.date));
+  const maxTokens = Math.max(1, ...sorted.map((d) => d.tokens));
+  const grid: number[][] = [];
+  for (let r = 0; r < HEATMAP_ROWS; r++) {
+    const row: number[] = [];
+    for (let c = 0; c < HEATMAP_COLS; c++) {
+      const i = r * HEATMAP_COLS + c;
+      const cell = sorted[i];
+      const normalized = cell ? cell.tokens / maxTokens : 0;
+      row.push(normalized);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+// ── Date range & chart data ───────────────────────────────────────────────────
+function getDateRange(range: string): { startDate: string; endDate: string } {
+  const end = new Date();
+  const start = new Date();
+  if (range === "today") {
+    start.setHours(0, 0, 0, 0);
+  } else if (range === "last_week") {
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+  } else {
+    start.setDate(start.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+  }
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
+
+const CHART_COLORS = ["#2B1C37", "#366C9F", "#7FD7AF", "#D8F2DF"];
+
+function buildChartData(items: TokensByDayItem[]): { labels: string[]; datasets: { label: string; data: number[]; backgroundColor: string }[] } {
+  const byDate = new Map<string, Map<string, number>>();
+  const projectOrder: string[] = [];
+  for (const item of items) {
+    const projectKey = item.project_id ?? "__others__";
+    if (!projectOrder.includes(projectKey)) projectOrder.push(projectKey);
+    if (!byDate.has(item.date)) byDate.set(item.date, new Map());
+    const dayMap = byDate.get(item.date)!;
+    dayMap.set(projectKey, (dayMap.get(projectKey) ?? 0) + item.total_tokens);
+  }
+  const sortedDates = Array.from(byDate.keys()).sort();
+  const othersLast = [...projectOrder].sort((a, b) => (a === "__others__" ? 1 : b === "__others__" ? -1 : 0));
+  const labels = sortedDates;
+  const datasets = othersLast.map((projectKey, i) => ({
+    label: projectKey === "__others__" ? "No project" : projectKey,
+    data: sortedDates.map((d) => byDate.get(d)?.get(projectKey) ?? 0),
+    backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+  return { labels, datasets };
+}
 
 // ── Provider icons ────────────────────────────────────────────────────────────
 
@@ -92,25 +112,22 @@ function OpenAIIcon() {
   return <img src="/images/openai.svg" alt="OpenAI" width={16} height={16} />;
 }
 
+
 function AnthropicIcon() {
   return <img src="/images/anthropic.svg" alt="Anthropic" width={16} height={16} />;
 }
+
 
 function OpenRouterIcon() {
   return <img src="/images/openrouter.svg" alt="OpenRouter" width={16} height={16} />;
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface ProviderConfig {
-  provider: string;
-  model: string;
-  api_key: string;
-}
-
 interface KeySecrets {
-  chat_config: ProviderConfig | null;
-  inference_config: ProviderConfig | null;
-  integration_keys: Array<{ service: string; api_key: string }>;
+  inference_config: {
+    api_key: string;
+    provider?: string;
+  };
 }
 
 interface ApiKeyState {
@@ -121,34 +138,60 @@ interface ApiKeyState {
 export default function SettingsPage() {
   const queryClient = useQueryClient();
 
-  const [dateRange, setDateRange] = useState("last_week");
+  const [dateRange, setDateRange] = useState("today");
 
   // Provider key inputs
   const [openAIInput, setOpenAIInput] = useState("");
   const [anthropicInput, setAnthropicInput] = useState("");
-  const [openRouterInput, setOpenRouterInput] = useState("");
-
-  const { startDate, endDate } = useMemo(() => getDateRange(dateRange), [dateRange]);
+const [openRouterInput, setOpenRouterInput] = useState("");
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: apiKeyData, isLoading: isLoadingKey } = useQuery<ApiKeyState>({
     queryKey: ["api-key"],
-    queryFn: () => SettingsService.getApiKey(),
+    queryFn: async () => {
+      const headers = await getHeaders();
+      const res = await axios.get<{ api_key: string }>(
+        `${BASE_URL}/api/v1/api-keys`,
+        { headers }
+      );
+      return { api_key: res.data.api_key };
+    },
   });
 
-  const { data: keySecrets } = useQuery<KeySecrets | null>({
+  const { data: keySecrets } = useQuery<KeySecrets>({
     queryKey: ["secrets"],
-    queryFn: () => SettingsService.getSecrets(),
+    queryFn: async () => {
+      const headers = await getHeaders();
+      const res = await axios.get<KeySecrets>(
+        `${BASE_URL}/api/v1/secrets/all`,
+        { headers }
+      );
+      return res.data;
+    },
   });
 
-  const { data: tokensByDay } = useQuery({
+  const { startDate, endDate } = useMemo(() => getDateRange(dateRange), [dateRange]);
+
+  const {
+    data: tokensByDay,
+    isLoading: isLoadingTokens,
+    isError: isErrorTokens,
+    error: errorTokens,
+  } = useQuery({
     queryKey: ["analytics-tokens-by-day", startDate, endDate],
     queryFn: () => SettingsService.getTokensByDay(startDate, endDate),
+    enabled: !!startDate && !!endDate,
   });
 
-  const { data: analyticsSummary } = useQuery({
+  const {
+    data: analyticsSummary,
+    isLoading: isLoadingSummary,
+    isError: isErrorSummary,
+    error: errorSummary,
+  } = useQuery({
     queryKey: ["analytics-summary", startDate, endDate],
     queryFn: () => SettingsService.getAnalyticsSummary(startDate, endDate),
+    enabled: !!startDate && !!endDate,
   });
 
   const chartData = useMemo(
@@ -156,9 +199,38 @@ export default function SettingsPage() {
     [tokensByDay]
   );
 
+  /** Heatmap from daily token usage (from summary daily_costs or tokensByDay). */
+  const intensityData = useMemo(() => {
+    if (analyticsSummary?.daily_costs?.length) {
+      return buildIntensityData(
+        analyticsSummary.daily_costs.map((d) => ({ date: d.date, tokens: d.tokens }))
+      );
+    }
+    if (tokensByDay?.length) {
+      const byDate = new Map<string, number>();
+      for (const item of tokensByDay) {
+        byDate.set(item.date, (byDate.get(item.date) ?? 0) + item.total_tokens);
+      }
+      return buildIntensityData(
+        Array.from(byDate.entries()).map(([date, tokens]) => ({ date, tokens }))
+      );
+    }
+    return Array(HEATMAP_ROWS)
+      .fill(0)
+      .map(() => Array(HEATMAP_COLS).fill(0));
+  }, [analyticsSummary?.daily_costs, tokensByDay]);
+
+  const totalThreads = useMemo(() => {
+    if (!analyticsSummary?.conversation_stats?.length) return null;
+    return analyticsSummary.conversation_stats.reduce((s, c) => s + c.count, 0);
+  }, [analyticsSummary?.conversation_stats]);
+
   // ── Mutations ──────────────────────────────────────────────────────────────
   const { mutate: generateApiKey, isPending: isGenerating } = useMutation({
-    mutationFn: () => SettingsService.generateApiKey(),
+    mutationFn: async () => {
+      const headers = await getHeaders();
+      return axios.post(`${BASE_URL}/api/v1/api-keys`, {}, { headers });
+    },
     onSuccess: () => {
       toast.success("API Key generated successfully");
       queryClient.invalidateQueries({ queryKey: ["api-key"] });
@@ -168,36 +240,26 @@ export default function SettingsPage() {
     },
   });
 
-  const [savingProvider, setSavingProvider] = useState<string | null>(null);
-  const { mutate: saveProviderKey } = useMutation({
+  const { mutate: saveProviderKey, isPending: isSavingProvider } = useMutation({
     mutationFn: async (data: { provider: string; api_key: string }) => {
-      setSavingProvider(data.provider);
-      return SettingsService.saveProviderKey(data.provider, data.api_key);
+      const headers = await getHeaders();
+      return axios.post(
+        `${BASE_URL}/api/v1/secrets`,
+        { inference_config: { api_key: data.api_key, provider: data.provider } },
+        { headers }
+      );
     },
     onSuccess: (_data, variables) => {
       toast.success(`${variables.provider} key saved`);
       queryClient.invalidateQueries({ queryKey: ["secrets"] });
-      if (variables.provider === "openai") setOpenAIInput("");
-      else if (variables.provider === "anthropic") setAnthropicInput("");
-      else if (variables.provider === "openrouter") setOpenRouterInput("");
-      setSavingProvider(null);
     },
-    onError: () => { toast.error("Failed to save key"); setSavingProvider(null); },
+    onError: () => toast.error("Failed to save key"),
   });
 
-  const maskedKey = (key: string) => {
-    if (!key) return "";
-    if (key.length <= 8) return "•".repeat(key.length);
-    const visibleStart = 4;
-    const visibleEnd = 4;
-    const maskLen = key.length - visibleStart - visibleEnd;
-    return `${key.slice(0, visibleStart)}${"•".repeat(maskLen)}${key.slice(-visibleEnd)}`;
-  };
+  const maskedKey = (key: string) =>
+    key ? `${key.slice(0, 4)}${"•".repeat(24)}${key.slice(-4)}` : "";
 
-  const savedProvider =
-    (keySecrets?.inference_config?.provider ?? keySecrets?.chat_config?.provider)?.toLowerCase();
-  const savedApiKey =
-    keySecrets?.inference_config?.api_key ?? keySecrets?.chat_config?.api_key;
+  const savedProvider = keySecrets?.inference_config?.provider?.toLowerCase();
 
   return (
     <div className="p-6 w-full min-w-0 overflow-hidden">
@@ -222,11 +284,23 @@ export default function SettingsPage() {
       <div className="border border-gray-200 rounded-xl mb-5 flex overflow-hidden bg-white">
         {/* Chart */}
         <div className="flex-1 min-w-0 p-5 h-[300px]">
-          {chartData.labels.length > 0 ? (
+          {isErrorTokens || isErrorSummary ? (
+            <div className="h-full flex items-center justify-center text-sm text-amber-600">
+              {typeof (errorTokens as any)?.response?.data?.detail === "string"
+                ? (errorTokens as any).response.data.detail
+                : typeof (errorSummary as any)?.response?.data?.detail === "string"
+                  ? (errorSummary as any).response.data.detail
+                  : "Analytics temporarily unavailable"}
+            </div>
+          ) : isLoadingTokens || isLoadingSummary ? (
+            <div className="h-full flex items-center justify-center text-gray-400 text-sm">
+              Loading analytics…
+            </div>
+          ) : chartData.labels.length > 0 ? (
             <StackedBarChart labels={chartData.labels} datasets={chartData.datasets} />
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-400 text-sm">
-              {tokensByDay ? "No token usage data for this period." : "Loading…"}
+            <div className="h-full flex items-center justify-center text-gray-500 text-sm">
+              No token usage data for this period.
             </div>
           )}
         </div>
@@ -235,24 +309,22 @@ export default function SettingsPage() {
         <div className="w-[22%] min-w-[190px] border-l border-gray-200 flex flex-col divide-y divide-gray-200">
           <div className="flex-1 flex flex-col justify-center px-6 py-5">
             <p className="text-sm font-semibold text-gray-500 mb-1">Total Tokens</p>
-            <div className="flex items-end justify-between mt-1">
+            <div className="flex items-end mt-1">
               <span className="text-2xl font-bold text-gray-900">
-                {analyticsSummary
+                {analyticsSummary?.summary?.total_tokens != null
                   ? analyticsSummary.summary.total_tokens.toLocaleString()
                   : "—"}
               </span>
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
             </div>
           </div>
           <div className="flex-1 flex flex-col justify-center px-6 py-5">
             <p className="text-sm font-semibold text-gray-500 mb-1">Total Requests</p>
-            <div className="flex items-end justify-between mt-1">
+            <div className="flex items-end mt-1">
               <span className="text-2xl font-bold text-gray-900">
-                {analyticsSummary
+                {analyticsSummary?.summary?.total_llm_calls != null
                   ? analyticsSummary.summary.total_llm_calls.toLocaleString()
                   : "—"}
               </span>
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
             </div>
           </div>
         </div>
@@ -297,13 +369,13 @@ export default function SettingsPage() {
                 <Input
                   type="password"
                   className="flex-1 bg-white text-sm"
-                  placeholder={savedProvider === "openai" && savedApiKey ? maskedKey(savedApiKey) : ""}
+                  placeholder={savedProvider === "openai" && keySecrets?.inference_config.api_key ? maskedKey(keySecrets.inference_config.api_key) : ""}
                   value={openAIInput}
                   onChange={(e) => setOpenAIInput(e.target.value)}
                 />
                 {openAIInput && (
-                  <Button size="sm" disabled={savingProvider === "openai"}
-                    onClick={() => saveProviderKey({ provider: "openai", api_key: openAIInput })}>
+                  <Button size="sm" disabled={isSavingProvider}
+                    onClick={() => { saveProviderKey({ provider: "openai", api_key: openAIInput }); setOpenAIInput(""); }}>
                     Save
                   </Button>
                 )}
@@ -320,13 +392,13 @@ export default function SettingsPage() {
                 <Input
                   type="password"
                   className="flex-1 bg-white text-sm"
-                  placeholder={savedProvider === "anthropic" && savedApiKey ? maskedKey(savedApiKey) : ""}
+                  placeholder={savedProvider === "anthropic" && keySecrets?.inference_config.api_key ? maskedKey(keySecrets.inference_config.api_key) : ""}
                   value={anthropicInput}
                   onChange={(e) => setAnthropicInput(e.target.value)}
                 />
                 {anthropicInput && (
-                  <Button size="sm" disabled={savingProvider === "anthropic"}
-                    onClick={() => saveProviderKey({ provider: "anthropic", api_key: anthropicInput })}>
+                  <Button size="sm" disabled={isSavingProvider}
+                    onClick={() => { saveProviderKey({ provider: "anthropic", api_key: anthropicInput }); setAnthropicInput(""); }}>
                     Save
                   </Button>
                 )}
@@ -343,13 +415,13 @@ export default function SettingsPage() {
                 <Input
                   type="password"
                   className="flex-1 bg-white text-sm"
-                  placeholder={savedProvider === "openrouter" && savedApiKey ? maskedKey(savedApiKey) : ""}
+                  placeholder={savedProvider === "openrouter" && keySecrets?.inference_config.api_key ? maskedKey(keySecrets.inference_config.api_key) : ""}
                   value={openRouterInput}
                   onChange={(e) => setOpenRouterInput(e.target.value)}
                 />
                 {openRouterInput && (
-                  <Button size="sm" disabled={savingProvider === "openrouter"}
-                    onClick={() => saveProviderKey({ provider: "openrouter", api_key: openRouterInput })}>
+                  <Button size="sm" disabled={isSavingProvider}
+                    onClick={() => { saveProviderKey({ provider: "openrouter", api_key: openRouterInput }); setOpenRouterInput(""); }}>
                     Save
                   </Button>
                 )}
@@ -358,14 +430,14 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Right card – Token Use Intensity */}
+        {/* Right card – Token Use Intensity (from backend) */}
         <div className="w-[32%] min-w-[280px] border border-gray-200 rounded-xl p-5 bg-white">
           <p className="text-sm font-semibold text-gray-800 mb-4">Token Use Intensity</p>
 
-          {/* Heatmap grid */}
+          {/* Heatmap grid – driven by daily token usage */}
           <div
             className="grid gap-1 mb-5"
-            style={{ gridTemplateColumns: `repeat(${intensityData[0]?.length ?? 13}, 1fr)` }}
+            style={{ gridTemplateColumns: `repeat(${HEATMAP_COLS}, 1fr)` }}
           >
             {intensityData.map((row, ri) =>
               row.map((val, ci) => (
@@ -378,22 +450,25 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Stats */}
+          {/* Stats – from analytics summary */}
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-bold text-gray-900">2,546</span>
+              <span className="text-2xl font-bold text-gray-900">
+                {analyticsSummary?.summary?.total_llm_calls != null
+                  ? analyticsSummary.summary.total_llm_calls.toLocaleString()
+                  : "—"}
+              </span>
               <span className="text-xs font-semibold text-gray-400 tracking-wider">MSGS</span>
             </div>
-            <div className="flex items-baseline justify-between">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-bold text-gray-900">342</span>
-                <span className="text-xs font-semibold text-gray-400 tracking-wider">THREADS</span>
-              </div>
-              <div className="flex flex-col items-end gap-1 text-xs font-semibold">
-                <span className="text-emerald-500">+45,546 <span className="text-gray-400 font-normal">ADDED</span></span>
-                <span className="text-red-500">-12,546 <span className="text-gray-400 font-normal">REMOVED</span></span>
-                <span className="text-amber-500">~2,054 <span className="text-gray-400 font-normal">CHANGED</span></span>
-              </div>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-2xl font-bold text-gray-900">
+                {totalThreads != null
+                  ? totalThreads.toLocaleString()
+                  : analyticsSummary?.summary?.total_llm_calls != null
+                    ? analyticsSummary.summary.total_llm_calls.toLocaleString()
+                    : "—"}
+              </span>
+              <span className="text-xs font-semibold text-gray-400 tracking-wider">THREADS</span>
             </div>
           </div>
         </div>

@@ -73,5 +73,17 @@ const options: ChartOptions<"bar"> = {
 };
 
 export default function StackedBarChart({ labels, datasets }: StackedBarChartProps) {
-  return <Bar data={{ labels, datasets }} options={options} />;
+  const chartData = {
+    labels,
+    datasets: datasets.map((d) => ({
+      label: d.label,
+      data: d.data,
+      backgroundColor: d.backgroundColor,
+    })),
+  };
+  return (
+    <div className="h-[300px] w-full">
+      <Bar data={chartData} options={options} />
+    </div>
+  );
 }
