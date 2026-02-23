@@ -242,12 +242,7 @@ const [openRouterInput, setOpenRouterInput] = useState("");
 
   const { mutate: saveProviderKey, isPending: isSavingProvider } = useMutation({
     mutationFn: async (data: { provider: string; api_key: string }) => {
-      const headers = await getHeaders();
-      return axios.post(
-        `${BASE_URL}/api/v1/secrets`,
-        { inference_config: { api_key: data.api_key, provider: data.provider } },
-        { headers }
-      );
+      await SettingsService.saveProviderKey(data.provider, data.api_key);
     },
     onSuccess: (_data, variables) => {
       toast.success(`${variables.provider} key saved`);
@@ -462,11 +457,7 @@ const [openRouterInput, setOpenRouterInput] = useState("");
             </div>
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-bold text-gray-900">
-                {totalThreads != null
-                  ? totalThreads.toLocaleString()
-                  : analyticsSummary?.summary?.total_llm_calls != null
-                    ? analyticsSummary.summary.total_llm_calls.toLocaleString()
-                    : "—"}
+                {totalThreads != null ? totalThreads.toLocaleString() : "—"}
               </span>
               <span className="text-xs font-semibold text-gray-400 tracking-wider">THREADS</span>
             </div>
