@@ -19,7 +19,7 @@ const FIGMA = {
   modelDropdownText: "#00291C",
 } as const;
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Send, Loader2, ChevronDown, Plus, Check, FolderOpen, Github, GitBranch, FileText, X, Search, Bot, Globe, Paperclip, Lock, SendHorizonal, ExternalLink, Crown } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -199,6 +199,15 @@ export default function IdeaInputCard({
   useEffect(() => {
     loadModelList();
   }, [loadModelList]);
+
+  // For free users, show free models first and paid/locked models after.
+  const orderedModelList = useMemo(() => {
+    if (!modelList || modelList.length === 0) return [];
+    if (!isFreeUser) return modelList;
+    const freeModels = modelList.filter((m) => isModelAvailable(m));
+    const paidModels = modelList.filter((m) => !isModelAvailable(m));
+    return [...freeModels, ...paidModels];
+  }, [modelList, isFreeUser]);
 
   const attachedFiles =
     controlledFiles !== undefined ? controlledFiles : localFiles;
@@ -955,10 +964,10 @@ export default function IdeaInputCard({
                 style={{ color: FIGMA.modelDropdownText }}
               >
                 <div className="py-1 max-h-[320px] overflow-y-auto">
-                  {modelList.length === 0 ? (
+                  {orderedModelList.length === 0 ? (
                     <div className="px-4 py-3 text-sm text-zinc-500">Loading models…</div>
                   ) : (
-                    modelList.map((model) => {
+                    orderedModelList.map((model) => {
                       const available = isModelAvailable(model);
                       return (
                         <DropdownMenuItem
