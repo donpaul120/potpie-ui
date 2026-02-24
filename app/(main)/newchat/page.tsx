@@ -541,7 +541,7 @@ export default function NewChatPage() {
         } else if (
           (state.selectedAgent === "ask" ||
             state.selectedAgent === "debug" ||
-            state.selectedAgent === "spec_gen") &&
+            state.selectedAgent === "spec_gen" ||
             state.selectedAgent === "code") &&
           projectId &&
           state.input.trim()
@@ -764,7 +764,7 @@ export default function NewChatPage() {
           } else if (
             (state.selectedAgent === "ask" ||
               state.selectedAgent === "debug" ||
-              state.selectedAgent === "spec_gen") &&
+              state.selectedAgent === "spec_gen" ||
               state.selectedAgent === "code") &&
             projectId &&
             state.input.trim()
@@ -911,22 +911,13 @@ export default function NewChatPage() {
     await parseRepo(repoName, branchName);
   };
 
-  const createConversationAndNavigate = async (projectId: string) => {
-    const chatAgents = ["ask", "debug", "spec_gen"];
-    if (
-      !state.selectedAgent ||
-      !chatAgents.includes(state.selectedAgent)
   const createConversationAndNavigate = async (
     projectId: string,
     repoName?: string,
     branchName?: string
   ): Promise<boolean> => {
-    if (
-      !state.selectedAgent ||
-      (state.selectedAgent !== "ask" &&
-        state.selectedAgent !== "debug" &&
-        state.selectedAgent !== "code")
-    )
+    const chatAgents = ["ask", "debug", "spec_gen", "code"];
+    if (!state.selectedAgent || !chatAgents.includes(state.selectedAgent))
       return false;
     if (!user?.uid) {
       toast.error("Please sign in to continue");
@@ -949,10 +940,9 @@ export default function NewChatPage() {
           ? "Codebase Q&A Chat"
           : state.selectedAgent === "debug"
             ? "Debug Chat"
-            : "Spec Generation Chat";
-          : state.selectedAgent === "code"
-            ? "Code Generation Chat"
-            : "Debug Chat";
+            : state.selectedAgent === "code"
+              ? "Code Generation Chat"
+              : "Spec Generation Chat";
       const conversationResponse = await ChatService.createConversation(
         user.uid,
         title,
@@ -1022,7 +1012,7 @@ export default function NewChatPage() {
     if (
       state.selectedAgent === "ask" ||
       state.selectedAgent === "debug" ||
-      state.selectedAgent === "spec_gen"
+      state.selectedAgent === "spec_gen" ||
       state.selectedAgent === "code"
     ) {
       if (!state.projectId) {
@@ -1188,7 +1178,7 @@ export default function NewChatPage() {
     if (
       state.selectedAgent === "ask" ||
       state.selectedAgent === "debug" ||
-      state.selectedAgent === "spec_gen"
+      state.selectedAgent === "spec_gen" ||
       state.selectedAgent === "code"
     ) {
       if (!state.selectedRepo || !state.selectedBranch) {
