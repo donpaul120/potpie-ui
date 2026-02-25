@@ -85,7 +85,9 @@ function getDateRange(range: string): { startDate: string; endDate: string } {
 
 const CHART_COLORS = ["#2B1C37", "#366C9F", "#7FD7AF", "#D8F2DF"];
 
-function buildChartData(items: TokensByDayItem[]): { labels: string[]; datasets: { label: string; data: number[]; backgroundColor: string }[] } {
+function buildChartData(
+  items: TokensByDayItem[]
+): { labels: string[]; datasets: { label: string; data: number[]; backgroundColor: string }[] } {
   const byDate = new Map<string, Map<string, number>>();
   const projectOrder: string[] = [];
   for (const item of items) {
@@ -104,6 +106,27 @@ function buildChartData(items: TokensByDayItem[]): { labels: string[]; datasets:
     backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
   }));
   return { labels, datasets };
+}
+
+function buildChartDataFromDailyCosts(
+  dailyCosts: AnalyticsSummary["daily_costs"] | undefined
+): { labels: string[]; datasets: { label: string; data: number[]; backgroundColor: string }[] } {
+  if (!dailyCosts || dailyCosts.length === 0) {
+    return { labels: [], datasets: [] };
+  }
+  const sorted = [...dailyCosts].sort((a, b) => a.date.localeCompare(b.date));
+  const labels = sorted.map((d) => d.date);
+  const data = sorted.map((d) => d.tokens ?? 0);
+  return {
+    labels,
+    datasets: [
+      {
+        label: "All projects",
+        data,
+        backgroundColor: CHART_COLORS[0],
+      },
+    ],
+  };
 }
 
 // ── Provider icons ────────────────────────────────────────────────────────────
@@ -194,36 +217,75 @@ const [openRouterInput, setOpenRouterInput] = useState("");
     enabled: !!startDate && !!endDate,
   });
 
-  const chartData = useMemo(
-    () => buildChartData(tokensByDay ?? []),
-    [tokensByDay]
-  );
-
-  /** Heatmap from daily token usage (from summary daily_costs or tokensByDay). */
-  const intensityData = useMemo(() => {
+  const chartData = useMemo(() => {
+    if (tokensByDay && tokensByDay.length > 0) {
+      return buildChartData(tokensByDay);
+    }
     if (analyticsSummary?.daily_costs?.length) {
-      return buildIntensityData(
-        analyticsSummary.daily_costs.map((d) => ({ date: d.date, tokens: d.tokens }))
-      );
+      return buildChartDataFromDailyCosts(analyticsSummary.daily_costs);
     }
-    if (tokensByDay?.length) {
-      const byDate = new Map<string, number>();
-      for (const item of tokensByDay) {
-        byDate.set(item.date, (byDate.get(item.date) ?? 0) + item.total_tokens);
-      }
-      return buildIntensityData(
-        Array.from(byDate.entries()).map(([date, tokens]) => ({ date, tokens }))
-      );
-    }
-    return Array(HEATMAP_ROWS)
-      .fill(0)
-      .map(() => Array(HEATMAP_COLS).fill(0));
-  }, [analyticsSummary?.daily_costs, tokensByDay]);
+    return { labels: [], datasets: [] as { label: string; data: number[]; backgroundColor: string }[] };
+  }, [tokensByDay, analyticsSummary?.daily_costs]);
 
-  const totalThreads = useMemo(() => {
-    if (!analyticsSummary?.conversation_stats?.length) return null;
-    return analyticsSummary.conversation_stats.reduce((s, c) => s + c.count, 0);
-  }, [analyticsSummary?.conversation_stats]);
+  const {
+    totalTokens,
+    totalRequests,
+    totalThreads,
+    intensityData,
+  } = useMemo(() => {
+    type DayAgg = { date: string; tokens: number; runCount: number };
+    let daily: DayAgg[] = [];
+
+    if (analyticsSummary?.daily_costs?.length) {
+      daily = analyticsSummary.daily_costs.map((d) => ({
+        date: d.date,
+        tokens: d.tokens ?? 0,
+        runCount: d.run_count ?? 0,
+      }));
+    } else if (tokensByDay?.length) {
+      const byDate = new Map<string, DayAgg>();
+      for (const item of tokensByDay) {
+        const existing =
+          byDate.get(item.date) ??
+          ({
+            date: item.date,
+            tokens: 0,
+            runCount: 0,
+          } as DayAgg);
+        existing.tokens += item.total_tokens;
+        byDate.set(item.date, existing);
+      }
+      daily = Array.from(byDate.values());
+    }
+
+    const totalTokens =
+      daily.length > 0
+        ? daily.reduce((sum, d) => sum + d.tokens, 0)
+        : (null as number | null);
+
+    const totalRequests =
+      daily.length > 0
+        ? daily.reduce((sum, d) => sum + d.runCount, 0)
+        : (null as number | null);
+
+    const totalThreads =
+      daily.length > 0
+        ? daily.filter(
+            (d) => (d.tokens ?? 0) > 0 || (d.runCount ?? 0) > 0
+          ).length
+        : (null as number | null);
+
+    const intensityData =
+      daily.length > 0
+        ? buildIntensityData(
+            daily.map(({ date, tokens }) => ({ date, tokens }))
+          )
+        : Array(HEATMAP_ROWS)
+            .fill(0)
+            .map(() => Array(HEATMAP_COLS).fill(0));
+
+    return { totalTokens, totalRequests, totalThreads, intensityData };
+  }, [analyticsSummary?.daily_costs, tokensByDay]);
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const { mutate: generateApiKey, isPending: isGenerating } = useMutation({
@@ -306,9 +368,7 @@ const [openRouterInput, setOpenRouterInput] = useState("");
             <p className="text-sm font-semibold text-gray-500 mb-1">Total Tokens</p>
             <div className="flex items-end mt-1">
               <span className="text-2xl font-bold text-gray-900">
-                {analyticsSummary?.summary?.total_tokens != null
-                  ? analyticsSummary.summary.total_tokens.toLocaleString()
-                  : "—"}
+                {totalTokens != null ? totalTokens.toLocaleString() : "—"}
               </span>
             </div>
           </div>
@@ -316,9 +376,7 @@ const [openRouterInput, setOpenRouterInput] = useState("");
             <p className="text-sm font-semibold text-gray-500 mb-1">Total Requests</p>
             <div className="flex items-end mt-1">
               <span className="text-2xl font-bold text-gray-900">
-                {analyticsSummary?.summary?.total_llm_calls != null
-                  ? analyticsSummary.summary.total_llm_calls.toLocaleString()
-                  : "—"}
+                {totalRequests != null ? totalRequests.toLocaleString() : "—"}
               </span>
             </div>
           </div>
@@ -445,13 +503,11 @@ const [openRouterInput, setOpenRouterInput] = useState("");
             )}
           </div>
 
-          {/* Stats – from analytics summary */}
+          {/* Stats – derived from analytics data */}
           <div className="flex flex-col gap-2">
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-bold text-gray-900">
-                {analyticsSummary?.summary?.total_llm_calls != null
-                  ? analyticsSummary.summary.total_llm_calls.toLocaleString()
-                  : "—"}
+                {totalRequests != null ? totalRequests.toLocaleString() : "—"}
               </span>
               <span className="text-xs font-semibold text-gray-400 tracking-wider">MSGS</span>
             </div>
