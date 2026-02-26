@@ -1,6 +1,7 @@
 import axios from "axios";
 import getHeaders from "@/app/utils/headers.util";
 import { ParsingStatusEnum } from "@/lib/Constants";
+import { getProviderConfig } from "@/lib/provider-config";
 
 // Define a type for the headers
 type Headers = {
@@ -76,7 +77,8 @@ export default class BranchAndRepositoryService {
                 params.search = trimmedSearch;
             }
             
-            const response = await axios.get(`${baseUrl}/api/v1/github/user-repos`, {
+            const apiPrefix = getProviderConfig().apiPrefix;
+            const response = await axios.get(`${baseUrl}${apiPrefix}/user-repos`, {
                 headers,
                 params,
             });
@@ -167,8 +169,9 @@ export default class BranchAndRepositoryService {
                 }
             }
             
+            const apiPrefix = getProviderConfig().apiPrefix;
             const response = await axios.get(
-                `${baseUrl}/api/v1/github/get-branch-list`,
+                `${baseUrl}${apiPrefix}/get-branch-list`,
                 {
                     params,
                     headers,
@@ -240,8 +243,9 @@ export default class BranchAndRepositoryService {
         const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
         try {
+            const apiPrefix = getProviderConfig().apiPrefix;
             const response = await axios.get(
-                `${baseUrl}/api/v1/github/repo-structure`,
+                `${baseUrl}${apiPrefix}/repo-structure`,
                 {
                     params: {
                         repo_name: repoName,
@@ -262,8 +266,9 @@ export default class BranchAndRepositoryService {
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
       try {
+        const apiPrefix = getProviderConfig().apiPrefix;
         const response = await axios.get(
-          `${baseUrl}/api/v1/github/check-public-repo`,
+          `${baseUrl}${apiPrefix}/check-public-repo`,
           {
             params: {
               repo_name: repoName,

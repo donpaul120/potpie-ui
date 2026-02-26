@@ -1,10 +1,13 @@
 import { useRef, useEffect } from "react";
+import { isGitLabProvider } from "@/lib/provider-config";
 
 /**
- * Shared hook for opening GitHub App installation popup and polling for closure.
+ * Shared hook for opening provider app installation popup or redirect.
+ * For GitHub: opens the GitHub App installation popup and polls for closure.
+ * For GitLab: redirects to /link-gitlab page.
  * Handles cleanup of intervals and timeouts on unmount.
- * 
- * @param onInstalled - Callback invoked when popup is closed (installation detected)
+ *
+ * @param onInstalled - Callback invoked when popup is closed (installation detected, GitHub only)
  */
 export function useGithubAppPopup(onInstalled?: () => void) {
   const popupRef = useRef<Window | null>(null);
@@ -26,6 +29,12 @@ export function useGithubAppPopup(onInstalled?: () => void) {
   }, []);
 
   const openGithubPopup = () => {
+    // For GitLab, redirect to the link-gitlab page instead of opening a popup
+    if (isGitLabProvider()) {
+      window.location.href = "/link-gitlab";
+      return;
+    }
+
     const githubAppUrl =
       "https://github.com/apps/" +
       process.env.NEXT_PUBLIC_GITHUB_APP_NAME +

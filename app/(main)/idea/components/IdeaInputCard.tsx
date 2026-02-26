@@ -21,7 +21,7 @@ const FIGMA = {
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Loader2, ChevronDown, Plus, Check, FolderOpen, Github, GitBranch, FileText, X, Search, Bot, Globe, Paperclip, Lock, SendHorizonal, ExternalLink, Crown } from "lucide-react";
+import { Send, Loader2, ChevronDown, Plus, Check, FolderOpen, Github, Gitlab, GitBranch, FileText, X, Search, Bot, Globe, Paperclip, Lock, SendHorizonal } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,7 @@ import MinorService from "@/services/minorService";
 import ModelService, { type Model } from "@/services/ModelService";
 import { planTypesEnum } from "@/lib/Constants";
 import { useGithubAppPopup } from "../hooks/useGithubAppPopup";
+import { isGitLabProvider } from "@/lib/provider-config";
 import BranchAndRepositoryService from "@/services/BranchAndRepositoryService";
 import { toast } from "@/components/ui/sonner";
 
@@ -478,6 +479,7 @@ export default function IdeaInputCard({
                   <span className="flex-1 truncate">
                     {selectedRepoData
                       ? selectedRepoData.full_name || selectedRepoData.name
+                      : (isGitLabProvider() ? "Enter a GitLab Project URL" : "Enter a GitHub Repository URL")}
                       : "Select Repo"}
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" />
@@ -579,6 +581,8 @@ export default function IdeaInputCard({
                           <div className="flex-shrink-0">
                             {isLocalPath ? (
                               <FolderOpen className={`h-3.5 w-3.5 ${isSelected ? "text-foreground" : "text-zinc-400"}`} />
+                            ) : isGitLabProvider() ? (
+                              <Gitlab className={`h-3.5 w-3.5 ${isSelected ? "text-foreground" : "text-zinc-400"}`} />
                             ) : (
                               <Github className={`h-3.5 w-3.5 ${isSelected ? "text-foreground" : "text-zinc-400"}`} />
                             )}

@@ -3,6 +3,7 @@ import {
   CheckCircle,
   GitBranch,
   Github,
+  Gitlab,
   Loader,
   Plus,
   XCircle,
@@ -14,6 +15,7 @@ import Link from "next/link";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { isGitHubProvider, isGitLabProvider, getProviderConfig } from "@/lib/provider-config";
 import {
   Tooltip,
   TooltipContent,
@@ -213,6 +215,10 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
   const popupRef = useRef<Window | null>(null);
 
   const openPopup = () => {
+    if (isGitLabProvider()) {
+      window.location.href = "/link-gitlab";
+      return;
+    }
     popupRef.current = window.open(
       githubAppUrl,
       "_blank",
@@ -316,6 +322,70 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
     }
   };
 
+  const { data: UserRepositorys, isLoading: UserRepositorysLoading } = useQuery(
+    {
+      queryKey: ["user-repository"],
+      queryFn: async () => {
+        const repos =
+          await BranchAndRepositoryService.getUserRepositories().then(
+            (data) => {
+              if (defaultRepo && data.length > 0) {
+                const decodedDefaultRepo =
+                  decodeURIComponent(defaultRepo).toLowerCase();
+                const matchingRepo = data.find((repo: RepoIdentifier) => {
+                  const repoIdentifier = getRepoIdentifier(repo);
+                  return (
+                    repoIdentifier &&
+                    repoIdentifier.toLowerCase() === decodedDefaultRepo
+                  );
+                });
+                dispatch(
+                  setRepoName(
+                    matchingRepo ? decodeURIComponent(defaultRepo) : "",
+                  ),
+                );
+              }
+              return data;
+            },
+          );
+        return repos;
+      },
+    },
+  );
+
+  const { data: UserBranch, isLoading: UserBranchLoading } = useQuery({
+    queryKey: ["user-branch", repoName],
+    queryFn: () => {
+      // Support both GitHub and GitLab URL formats
+      const regex = /https:\/\/(?:github\.com|gitlab\.com)\/([^\/]+)\/([^\/]+)/;
+      const match = repoName.match(regex);
+      if (match) {
+        const ownerRepo = `${match[1]}/${match[2]}`;
+        return BranchAndRepositoryService.getBranchList(ownerRepo);
+      }
+      return BranchAndRepositoryService.getBranchList(repoName).then((data) => {
+        // Auto-select branch if there's only one
+        if (data?.length === 1) {
+          dispatch(setBranchName(data[0]));
+        }
+        // Handle default branch selection if provided
+        else if (data?.length > 0 && defaultBranch) {
+          const matchingBranch = data.find(
+            (branch: string) =>
+              branch.toLowerCase() ===
+              decodeURIComponent(defaultBranch).toLowerCase(),
+          );
+          dispatch(
+            setBranchName(
+              matchingBranch ? decodeURIComponent(defaultBranch) : "",
+            ),
+          );
+        }
+        return data;
+      });
+    },
+    enabled: !!repoName && repoName !== "",
+  });
 
   const {
     data: PublicRepo,
@@ -324,7 +394,8 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
   } = useQuery({
     queryKey: ["public-repo"],
     queryFn: async () => {
-      const regex = /https:\/\/github\.com\/([^\/]+)\/([^\/]+)/;
+      // Support both GitHub and GitLab URL formats
+      const regex = /https:\/\/(?:github\.com|gitlab\.com(?:\/[^\/]+)*)\/([^\/]+)\/([^\/]+)/;
       const match = inputValue.match(regex);
 
       if (!match) {
@@ -339,7 +410,11 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
 
       const repoExistsPublic = async (repo: string) => {
         try {
-          const res = await fetch(`https://api.github.com/repos/${repo}`);
+          // Use provider-appropriate API to check if repo exists publicly
+          const apiBase = isGitLabProvider()
+            ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(repo)}`
+            : `https://api.github.com/repos/${repo}`;
+          const res = await fetch(apiBase);
           return res.status === 200;
         } catch {
           return false;
@@ -395,8 +470,9 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
         handleSetPublicRepoDialog(false);
 
         if (isExplicitlyPrivate) {
+          const providerName = getProviderConfig().displayName;
           toast.error(
-            "This repository is private. Please link it through GitHub to import it.",
+            `This repository is private. Please link it through ${providerName} to import it.`,
           );
           openPopup();
         } else {
@@ -429,23 +505,26 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
             return false;
           }
 
+          const providerName = getProviderConfig().displayName;
           toast.error(
-            "Repository is private or not accessible. Please link it through GitHub.",
+            `Repository is private or not accessible. Please link it through ${providerName}.`,
           );
           openPopup();
           return false;
         }
 
         if (statusCode === 401) {
+          const providerName = getProviderConfig().displayName;
           toast.error(
-            "Backend is not authenticated with GitHub (401). This does not mean the repo is private. Configure GitHub auth and retry.",
+            `Backend is not authenticated with ${providerName} (401). This does not mean the repo is private. Configure ${providerName} auth and retry.`,
           );
           return false;
         }
 
         if (statusCode === 403) {
+          const providerName = getProviderConfig().displayName;
           toast.error(
-            "GitHub API forbidden or rate-limited (403). This does not mean the repo is private. Try again later.",
+            `${providerName} API forbidden or rate-limited (403). This does not mean the repo is private. Try again later.`,
           );
           return false;
         }
@@ -522,7 +601,8 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
 
   useEffect(() => {
     if (isPublicRepoDailog) {
-      const regex = /https:\/\/github\.com\/([^\/]+)\/([^\/]+)/;
+      // Support both GitHub and GitLab URL formats
+      const regex = /https:\/\/(?:github\.com|gitlab\.com)\/([^\/]+)\/([^\/]+)/;
       const match = inputValue.match(regex);
       if (match) {
         setIsValidLink(true);
@@ -568,10 +648,11 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
                     className="flex gap-3 items-center font-semibold justify-start"
                     variant="outline"
                   >
-                    <Github
-                      className="h-4 w-4 text-[#7A7A7A]"
-                      strokeWidth={1.5}
-                    />
+                    {isGitLabProvider() ? (
+                      <Gitlab className="h-4 w-4 text-[#7A7A7A]" strokeWidth={1.5} />
+                    ) : (
+                      <Github className="h-4 w-4 text-[#7A7A7A]" strokeWidth={1.5} />
+                    )}
                     Select Repository
                   </Button>
                 ) : (
@@ -586,6 +667,8 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
                         className="h-4 w-4 text-[#7A7A7A]"
                         strokeWidth={1.5}
                       />
+                    ) : isGitLabProvider() ? (
+                      <Gitlab className="h-4 w-4 text-[#7A7A7A]" strokeWidth={1.5} />
                     ) : (
                       <Github
                         className="h-4 w-4 text-[#7A7A7A]"
@@ -613,7 +696,7 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
                       </div>
                     )}
                     <CommandEmpty>
-                      {searchValue.startsWith("https://github.com/") &&
+                      {(searchValue.startsWith("https://github.com/") || searchValue.startsWith("https://gitlab.com/")) &&
                       !process.env.NEXT_PUBLIC_BASE_URL?.includes(
                         "localhost",
                       ) ? (
@@ -942,7 +1025,7 @@ const Step1: React.FC<Step1Props> = ({ setProjectId, setChatStep }) => {
                 id="link"
                 className="col-span-3"
                 value={inputValue}
-                placeholder="https://github.com/username/repo"
+                placeholder={isGitLabProvider() ? "https://gitlab.com/username/project" : "https://github.com/username/repo"}
                 onChange={(e) => setInputValue(e.target.value)}
               />
             </div>

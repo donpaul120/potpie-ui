@@ -15,8 +15,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GitBranch, Github } from "lucide-react";
+import { GitBranch, Github, Gitlab } from "lucide-react";
 import { ReactNode } from "react";
+import { isGitLabProvider } from "@/lib/provider-config";
 
 interface RepoIdentifier {
   full_name?: string | null;
@@ -67,7 +68,8 @@ export const RepoBranchDropdown = <T,>({
   getItemValue,
   getItemDisplay,
 }: RepoBranchDropdownProps<T>) => {
-  const Icon = type === "repository" ? Github : GitBranch;
+  const RepoIcon = isGitLabProvider() ? Gitlab : Github;
+  const Icon = type === "repository" ? RepoIcon : GitBranch;
   const iconColorClass = "text-[#7A7A7A]";
 
   if (isLoading) {
