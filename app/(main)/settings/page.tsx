@@ -64,6 +64,33 @@ function buildIntensityData(
   return grid;
 }
 
+interface TokenIntensityGridProps {
+  intensityData: number[][];
+}
+
+function TokenIntensityGrid({ intensityData }: TokenIntensityGridProps) {
+  return (
+    <div className="mb-5 w-full flex items-center justify-center">
+      <div
+        className="grid gap-x-2 gap-y-4 w-[400px] max-w-full"
+        style={{
+          gridTemplateColumns: `repeat(${HEATMAP_COLS}, auto)`,
+        }}
+      >
+        {intensityData.map((row, ri) =>
+          row.map((val, ci) => (
+            <div
+              key={`${ri}-${ci}`}
+              className="rounded-sm w-11 h-11 sm:w-11 sm:h-11"
+              style={{ backgroundColor: intensityColor(val) }}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Date range & chart data ───────────────────────────────────────────────────
 function getDateRange(range: string): { startDate: string; endDate: string } {
   const end = new Date();
@@ -484,24 +511,11 @@ const [openRouterInput, setOpenRouterInput] = useState("");
         </div>
 
         {/* Right card – Token Use Intensity (from backend) */}
-        <div className="w-[32%] min-w-[280px] border border-gray-200 rounded-xl p-5 bg-white">
+        <div className="w-[28%] min-w-[260px] border border-gray-200 rounded-xl p-5 bg-white">
           <p className="text-sm font-semibold text-gray-800 mb-4">Token Use Intensity</p>
 
           {/* Heatmap grid – driven by daily token usage */}
-          <div
-            className="grid gap-1 mb-5"
-            style={{ gridTemplateColumns: `repeat(${HEATMAP_COLS}, 1fr)` }}
-          >
-            {intensityData.map((row, ri) =>
-              row.map((val, ci) => (
-                <div
-                  key={`${ri}-${ci}`}
-                  className="aspect-square rounded-sm w-full"
-                  style={{ backgroundColor: intensityColor(val) }}
-                />
-              ))
-            )}
-          </div>
+          <TokenIntensityGrid intensityData={intensityData} />
 
           {/* Stats – derived from analytics data */}
           <div className="flex flex-col gap-2">
