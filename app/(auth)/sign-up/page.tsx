@@ -13,7 +13,7 @@ import type { SSOLoginResponse } from '@/types/auth';
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signInWithCustomToken, sendEmailVerification } from "firebase/auth";
+import { createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signInWithCustomToken } from "firebase/auth";
 import { auth } from "@/configs/Firebase-config";
 import { validateWorkEmail } from "@/lib/utils/emailValidation";
 import AuthService from "@/services/AuthService";
@@ -280,18 +280,6 @@ const Signup = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
       const user = userCredential.user;
 
-      // Send email verification using custom template from Firebase Console
-      try {
-        await sendEmailVerification(user);
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Email verification sent to', user.email);
-        }
-      } catch (verificationError: any) {
-        // Log error but don't block signup flow
-        console.error('Failed to send email verification:', verificationError);
-        // Continue with signup even if verification email fails
-      }
-
       // Call signup API
       const userSignup = await AuthService.signupWithEmailPassword(user);
 
@@ -400,24 +388,7 @@ const Signup = () => {
                 />
               </Link>
 
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 text-sm font-normal text-[#656969] hover:text-[#022D2C] transition-colors"
-              >
-                <Image
-                  src="/images/figma/auth/auth-signin-globe.svg"
-                  alt=""
-                  width={20}
-                  height={20}
-                />
-                <span className="px-1">ENG</span>
-                <Image
-                  src="/images/figma/auth/auth-signin-arrow-down.svg"
-                  alt=""
-                  width={20}
-                  height={20}
-                />
-              </button>
+
             </div>
 
             {/* Form content */}

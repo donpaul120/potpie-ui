@@ -34,6 +34,7 @@ import {
   SendHorizonal,
   RotateCw,
   Wrench,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Accordion,
@@ -46,6 +47,9 @@ import SpecService from "@/services/SpecService";
 import TaskSplittingService from "@/services/TaskSplittingService";
 import { PlanStatusResponse, PlanItem, PlanPhase, PhasedPlanItem } from "@/lib/types/spec";
 import { useSearchParams } from "next/navigation";
+import { useDispatch, useSelector } from "react-redux";
+import { AppDispatch, RootState } from "@/lib/state/store";
+import { setRepoAndBranchForTask } from "@/lib/state/Reducers/RepoAndBranch";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/components/ui/sonner";
 import Image from "next/image";
@@ -60,7 +64,11 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SharedMarkdown } from "@/components/chat/SharedMarkdown";
 import { useNavigationProgress } from "@/contexts/NavigationProgressContext";
-import { normalizeMarkdownForPreview } from "@/lib/utils";
+import { getStreamEventPayload, normalizeMarkdownForPreview } from "@/lib/utils";
+import {
+  StreamTimeline,
+  type StreamTimelineItem,
+} from "@/components/stream/StreamTimeline";
 
 /**
  * VERTICAL SLICE PLANNER (Auto-Generation Mode)
@@ -246,8 +254,13 @@ const PlanPage = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const dispatch = useDispatch<AppDispatch>();
   const recipeId = params?.taskId as string;
   const runIdFromUrl = searchParams.get("run_id");
+  const repoNameFromUrl = searchParams.get("repoName");
+
+  const repoBranchByTask = useSelector((state: RootState) => state.RepoAndBranch.byTaskId);
+  const storedRepoContext = recipeId ? repoBranchByTask?.[recipeId] : undefined;
 
   const [planStatus, setPlanStatus] = useState<PlanStatusResponse | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
@@ -257,16 +270,11 @@ const PlanPage = () => {
   const [branchName, setBranchName] = useState<string>("Branch");
   const [userPrompt, setUserPrompt] = useState<string>("");
   const [streamProgress, setStreamProgress] = useState<{ step: string; message: string } | null>(null);
-  const [streamChunks, setStreamChunks] = useState("");
-  /** Recent stream events (tool_call_start/end, subagent_start/end) for left-pane activity. */
-  const [streamEvents, setStreamEvents] = useState<{ id: string; type: string; label: string }[]>([]);
-  /** Output segments: one per tool_call_end (content streamed since previous tool end). */
-  const [streamSegments, setStreamSegments] = useState<{ id: string; label: string; content: string }[]>([]);
+  /** Interleaved stream: chunks (thinking/response) and tool calls in arrival order. */
+  const [streamItems, setStreamItems] = useState<StreamTimelineItem[]>([]);
   const streamAbortRef = useRef<AbortController | null>(null);
-  const streamEventIdRef = useRef(0);
-  const streamChunksRef = useRef("");
+  const streamItemIdRef = useRef(0);
   const streamOutputEndRef = useRef<HTMLDivElement>(null);
-  const streamChunkBoxRef = useRef<HTMLDivElement>(null);
 
   type ChatMessage = { role: "user" | "assistant"; content: string };
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -282,6 +290,7 @@ const PlanPage = () => {
   const THINKING_STORAGE_KEY_PLAN = "potpie_thinking_plan";
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const planContentRef = useRef<HTMLDivElement>(null);
   const { startNavigation } = useNavigationProgress();
 
   useEffect(() => {
@@ -299,19 +308,22 @@ const PlanPage = () => {
       try {
         const recipeDetails = await SpecService.getRecipeDetails(recipeId);
         // Repo/branch: API first, then localStorage, so we don't show "Unknown" when API omits them
-        const repoName =
+        const repo =
           recipeDetails.repo_name?.trim() ||
           fromStorage?.repo_name?.trim() ||
           "Unknown Repository";
-        const branchName =
+        const branch =
           recipeDetails.branch_name?.trim() || fromStorage?.branch_name?.trim() || "main";
-        setRepoName(repoName);
-        setBranchName(branchName);
+        setRepoName(repo);
+        setBranchName(branch);
         setUserPrompt(
           (recipeDetails.user_prompt && recipeDetails.user_prompt.trim()) ||
             fromStorage?.user_prompt ||
             "Implementation plan generation"
         );
+        if (repo && repo !== "Unknown Repository" && typeof window !== "undefined" && !new URLSearchParams(window.location.search).get("repoName")?.trim()) {
+          dispatch(setRepoAndBranchForTask({ taskId: recipeId, repoName: repo, branchName: branch }));
+        }
       } catch {
         // On error, use localStorage if available so repo/branch/prompt can still show
         setRepoName(fromStorage?.repo_name?.trim() || "Unknown Repository");
@@ -320,7 +332,11 @@ const PlanPage = () => {
       }
     };
     fetchRecipeDetails();
-  }, [recipeId]);
+  }, [recipeId, dispatch]);
+
+  const displayRepoName =
+    repoNameFromUrl || storedRepoContext?.repoName || repoName;
+  const displayBranchName = storedRepoContext?.branchName || branchName;
 
   useEffect(() => {
     if (!userPrompt || hasChatInitializedRef.current) return;
@@ -437,15 +453,12 @@ const PlanPage = () => {
       streamAbortRef.current?.abort();
       streamAbortRef.current = new AbortController();
       setStreamProgress({ step: "Connecting…", message: "Opening live stream" });
-      setStreamChunks("");
-      setStreamSegments([]);
-      setStreamEvents([]);
-      streamChunksRef.current = "";
+      setStreamItems([]);
 
       PlanService.connectPlanStream(recipeId, runIdFromUrl, {
         signal: streamAbortRef.current.signal,
         onEvent: (eventType, data) => {
-          const payload = (data?.data as Record<string, unknown>) ?? data;
+          const payload = getStreamEventPayload(data);
           if (eventType === "queued") {
             setStreamProgress({ step: "Queued", message: (payload?.message as string) ?? "Task queued for processing" });
           }
@@ -460,36 +473,44 @@ const PlanPage = () => {
           }
           if (eventType === "chunk" && payload?.content) {
             const content = String(payload.content);
-            setStreamChunks((prev) => {
-              const next = prev + content;
-              streamChunksRef.current = next;
-              return next;
+            setStreamItems((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.type === "chunk") {
+                return [...prev.slice(0, -1), { ...last, content: last.content + content }];
+              }
+              return [...prev, { type: "chunk", id: `chunk-${++streamItemIdRef.current}`, content }];
             });
           }
           if (eventType === "tool_call_start" && payload?.tool) {
-            const id = `tool-start-${++streamEventIdRef.current}`;
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "tool_start", label: `Running ${String(payload.tool)}` }]);
+            const call_id = (payload.call_id as string) ?? `tool-${++streamItemIdRef.current}`;
+            setStreamItems((prev) => [
+              ...prev,
+              { type: "tool", id: call_id, label: String(payload.tool), phase: "running" as const },
+            ]);
           }
           if (eventType === "tool_call_end" && payload?.tool) {
-            const id = `tool-end-${++streamEventIdRef.current}`;
-            const duration = payload.duration_ms != null ? ` (${payload.duration_ms}ms)` : "";
+            const call_id = payload.call_id as string | undefined;
             const label = String(payload.tool);
-            const contentToPush = streamChunksRef.current;
-            if (contentToPush) {
-              setStreamSegments((prev) => [...prev, { id: `seg-${id}`, label, content: contentToPush }]);
-            }
-            setStreamChunks("");
-            streamChunksRef.current = "";
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "tool_end", label: `Completed ${label}${duration}` }]);
-          }
-          if (eventType === "subagent_start" && payload?.agent) {
-            const id = `subagent-start-${++streamEventIdRef.current}`;
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "subagent_start", label: `Agent: ${String(payload.agent)}` }]);
-          }
-          if (eventType === "subagent_end" && payload?.agent) {
-            const id = `subagent-end-${++streamEventIdRef.current}`;
-            const duration = payload.duration_ms != null ? ` (${payload.duration_ms}ms)` : "";
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "subagent_end", label: `Done ${String(payload.agent)}${duration}` }]);
+            const result = payload.result;
+            const segmentContent =
+              result !== undefined && result !== null
+                ? typeof result === "object"
+                  ? JSON.stringify(result, null, 2)
+                  : String(result)
+                : "";
+            setStreamItems((prev) => {
+              const idx = call_id
+                ? prev.findIndex((it) => it.type === "tool" && it.id === call_id)
+                : prev.findLastIndex(
+                    (it) => it.type === "tool" && it.phase === "running" && it.label === label
+                  );
+              if (idx === -1) return prev;
+              const next = [...prev];
+              const cur = next[idx];
+              if (cur.type === "tool")
+                next[idx] = { ...cur, phase: "done" as const, result: segmentContent };
+              return next;
+            });
           }
           if (eventType === "end") {
             setStreamProgress(null);
@@ -499,16 +520,15 @@ const PlanPage = () => {
           }
           if (eventType === "error") {
             setStreamProgress(null);
-            setStreamChunks("");
-            setStreamSegments([]);
-            setStreamEvents([]);
-            streamChunksRef.current = "";
+            setStreamItems([]);
             queryClient.invalidateQueries({ queryKey: ["plan-status", recipeId] });
             PlanService.getPlanStatusByRecipeId(recipeId).then(setPlanStatus).catch(() => {});
             router.replace(`/task/${recipeId}/plan`, { scroll: false });
           }
         },
         onError: async (msg) => {
+          // Don't treat abort as an error - expected when switching streams or regenerating
+          if (/abort/i.test(msg)) return;
           // On stream error, check if plan is already completed - if so, don't show error toast
           try {
             const fallbackStatus = await PlanService.getPlanStatusByRecipeId(recipeId);
@@ -525,10 +545,7 @@ const PlanPage = () => {
             // Status check failed, show error
           }
           setStreamProgress(null);
-          setStreamChunks("");
-          setStreamSegments([]);
-          setStreamEvents([]);
-          streamChunksRef.current = "";
+          setStreamItems([]);
           toast.error("Live stream failed. Showing progress by polling.");
           router.replace(`/task/${recipeId}/plan`, { scroll: false });
         },
@@ -543,35 +560,12 @@ const PlanPage = () => {
     };
   }, [recipeId, runIdFromUrl, queryClient, router]);
 
-  // Interleave: for each tool show start + end together (Running → Completed), then its output box (same as spec/qna; backend sends call_id on both events)
-  type StreamBlock =
-    | { key: string; kind: "event"; event: (typeof streamEvents)[0] }
-    | { key: string; kind: "segment"; segment: (typeof streamSegments)[0] };
-  const mergedStreamBlocks = useMemo((): StreamBlock[] => {
-    const blocks: StreamBlock[] = [];
-    for (const ev of streamEvents) {
-      blocks.push({ key: ev.id, kind: "event", event: ev });
-      if (ev.type === "tool_end") {
-        const seg = streamSegments.find((s) => s.id === `seg-${ev.id}`);
-        if (seg) blocks.push({ key: seg.id, kind: "segment", segment: seg });
-      }
-    }
-    return blocks;
-  }, [streamEvents, streamSegments]);
-
-  // Auto-scroll tool output to bottom when new events/segments/chunks arrive
+  // Auto-scroll to end when stream items change
   useEffect(() => {
-    if (mergedStreamBlocks.length > 0 || streamChunks) {
+    if (streamItems.length > 0) {
       streamOutputEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [mergedStreamBlocks.length, streamChunks]);
-
-  // Auto-scroll inside the live chunk box when content grows
-  useEffect(() => {
-    if (streamChunks && streamChunkBoxRef.current) {
-      streamChunkBoxRef.current.scrollTo({ top: streamChunkBoxRef.current.scrollHeight, behavior: "smooth" });
-    }
-  }, [streamChunks]);
+  }, [streamItems.length]);
 
   // When we land on the plan page with "not_started" status, start plan generation (run_id comes from GET plan response, then we connect to stream)
   const hasTriggeredPlanGenRef = useRef(false);
@@ -628,41 +622,49 @@ const PlanPage = () => {
   const planId = searchParams.get("planId") ?? recipeId ?? "";
   const hasPlanContent = Boolean(planStatus?.plan);
 
-  // Persist thinking when plan is completed so it survives refresh
+  // Auto-scroll to bottom when plan is generated
+  useEffect(() => {
+    if (isCompleted && planContentRef.current) {
+      setTimeout(() => {
+        planContentRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 100);
+    }
+  }, [isCompleted]);
+
+  // Persist stream timeline when plan is completed so it survives refresh
   useEffect(() => {
     if (!recipeId || !isCompleted || !hasPlanContent) return;
-    if (streamSegments.length > 0 || streamEvents.length > 0) {
+    if (streamItems.length > 0) {
       try {
         sessionStorage.setItem(
           `${THINKING_STORAGE_KEY_PLAN}_${recipeId}`,
-          JSON.stringify({ segments: streamSegments, events: streamEvents })
+          JSON.stringify({ streamItems })
         );
       } catch {
         // ignore
       }
     }
-  }, [recipeId, isCompleted, hasPlanContent, streamSegments, streamEvents]);
+  }, [recipeId, isCompleted, hasPlanContent, streamItems]);
 
-  // Restore thinking on load when plan is completed but we have no stream state (e.g. after refresh)
+  // Restore stream timeline on load when plan is completed (e.g. after refresh)
   useEffect(() => {
     if (!recipeId || !isCompleted || !hasPlanContent || runIdFromUrl) return;
-    if (streamSegments.length > 0 || streamEvents.length > 0) return;
+    if (streamItems.length > 0) return;
     if (hasRestoredThinkingRef.current === recipeId) return;
     hasRestoredThinkingRef.current = recipeId;
     try {
       const raw = sessionStorage.getItem(`${THINKING_STORAGE_KEY_PLAN}_${recipeId}`);
       if (!raw) return;
-      const data = JSON.parse(raw) as { segments?: { id: string; label: string; content: string }[]; events?: { id: string; type: string; label: string }[] };
-      const segments = Array.isArray(data.segments) ? data.segments : [];
-      const events = Array.isArray(data.events) ? data.events : [];
-      if (segments.length > 0 || events.length > 0) {
-        setStreamSegments(segments);
-        setStreamEvents(events);
-      }
+      const data = JSON.parse(raw) as { streamItems?: StreamTimelineItem[] };
+      const items = Array.isArray(data.streamItems) ? data.streamItems : [];
+      if (items.length > 0) setStreamItems(items);
     } catch {
       // ignore
     }
-  }, [recipeId, isCompleted, hasPlanContent, runIdFromUrl, streamSegments.length, streamEvents.length]);
+  }, [recipeId, isCompleted, hasPlanContent, runIdFromUrl, streamItems.length]);
 
   useEffect(() => {
     if (!recipeId) return;
@@ -684,14 +686,27 @@ const PlanPage = () => {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left: Chat (same pattern as spec page) */}
         <div className="w-1/2 max-w-[50%] flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-[#D3E5E5] bg-[#FAF8F7] chat-panel-contained">
-          <div className="flex justify-between items-center px-6 py-4 shrink-0">
-            <h1 className="text-lg font-bold text-[#022019] truncate">
-              {userPrompt?.slice(0, 50) || "Chat Name"}
-              {(userPrompt?.length ?? 0) > 50 ? "…" : ""}
-            </h1>
-            <div className="flex items-center gap-2 shrink-0">
-              <ChatBadge icon={Github}>{repoName}</ChatBadge>
-              <ChatBadge icon={GitBranch}>{branchName}</ChatBadge>
+          <div className="px-6 pt-4 pb-2 shrink-0 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!recipeId) return;
+                router.push(`/task/${recipeId}/spec`);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-[#022019] px-0 py-0.5 rounded-md hover:underline w-fit"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to spec
+            </button>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-lg font-bold text-[#022019] truncate capitalize">
+                {userPrompt?.slice(0, 50) || "Chat Name"}
+                {(userPrompt?.length ?? 0) > 50 ? "…" : ""}
+              </h1>
+              <div className="flex items-center gap-2 shrink-0 mt-1 sm:mt-0">
+                <ChatBadge icon={Github}>{displayRepoName}</ChatBadge>
+                <ChatBadge icon={GitBranch}>{displayBranchName}</ChatBadge>
+              </div>
             </div>
           </div>
 
@@ -717,82 +732,26 @@ const PlanPage = () => {
                         Your implementation plan is ready. Review the phases below and tell me what you&apos;d like to change—we&apos;ll nail it before moving to code.
                       </div>
                     </div>
-                    {/* Agent output: full chat width; Tool calls and Output as separate blocks */}
-                    {(streamProgress || isGenerating || mergedStreamBlocks.length > 0 || streamChunks || streamSegments.length > 0) && (
+                    {/* Agent output: interleaved thinking and tool calls */}
+                    {(streamProgress || isGenerating || streamItems.length > 0) && (
                       <div className="flex justify-start w-full overflow-hidden" style={{ contain: "inline-size" }}>
                         <div className="w-10 h-10 rounded-lg shrink-0 mr-3 mt-0.5 flex items-center justify-center bg-[#102C2C] self-start opacity-0" aria-hidden />
                         <div className="min-w-0 flex-1 overflow-hidden" style={{ width: "calc(100% - 52px)" }}>
-                          {(streamProgress || isGenerating) && !streamChunks && (
+                          {(streamProgress || isGenerating) && streamItems.length === 0 && (
                             <p className="text-xs text-zinc-500 flex items-center gap-2 mb-2">
                               <span className="inline-block w-4 h-4 rounded-full border-2 border-[#102C2C] border-t-transparent animate-spin" />
                               {streamProgress ? `${streamProgress.step}: ${streamProgress.message}` : "Generating plan…"}
                             </p>
                           )}
-                          {mergedStreamBlocks.length > 0 && (
-                            <div className="mb-3">
-                              <details className="group/tools rounded-lg bg-[#F5F5F4] min-w-0 overflow-hidden">
-                                <summary className="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                                  <span className="text-xs font-medium text-zinc-800">
-                                    Tool calls ({mergedStreamBlocks.filter((b) => b.kind === "segment").length})
-                                  </span>
-                                  <ChevronDown className="w-4 h-4 shrink-0 text-zinc-500 transition-transform duration-200 group-open/tools:rotate-180" aria-hidden />
-                                </summary>
-                                <div className="space-y-3 min-w-0 overflow-hidden pt-1 pb-0">
-                                {mergedStreamBlocks.map((block) =>
-                                  block.kind === "event" ? (
-                                    (block.event.type === "tool_start" || block.event.type === "tool_end") ? (
-                                      <span key={block.key} className="hidden" aria-hidden />
-                                    ) : (
-                                      <p key={block.key} className="text-xs text-zinc-600 font-mono break-words">
-                                        {block.event.type === "subagent_start" ? "▶ " : "✓ "}{block.event.label}
-                                      </p>
-                                    )
-                                  ) : (
-                                    <details
-                                      key={block.key}
-                                      className="group rounded-lg bg-[#F5F5F4] min-w-0 overflow-hidden"
-                                    >
-                                      <summary className="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <Check className="w-4 h-4 shrink-0 text-emerald-600" aria-hidden />
-                                          <span className="text-xs font-medium text-zinc-800 truncate">
-                                            {block.segment.label}
-                                          </span>
-                                        </div>
-                                        <ChevronDown
-                                          className="w-4 h-4 shrink-0 text-zinc-500 transition-transform duration-200 group-open:rotate-180"
-                                          aria-hidden
-                                        />
-                                      </summary>
-                                      <div
-                                        ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
-                                        className="bg-[#FAF8F7] p-3 overflow-y-auto overflow-x-hidden min-w-0 text-xs text-zinc-700 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                                        style={{ msOverflowStyle: "none" }}
-                                      >
-                                        <SharedMarkdown content={normalizeMarkdownForPreview(block.segment.content)} />
-                                      </div>
-                                    </details>
-                                  )
-                                )}
-                                </div>
-                              </details>
-                            </div>
-                          )}
-                          {(streamChunks || streamSegments.length > 0 || (streamProgress || isGenerating)) && (
-                            <div className="space-y-2 min-w-0 overflow-hidden">
-                              {streamChunks ? (
-                                <div
-                                  ref={streamChunkBoxRef}
-                                  className="rounded-lg bg-[#FAF8F7] p-3 overflow-y-auto overflow-x-hidden min-w-0"
-                                >
-                                  <SharedMarkdown content={normalizeMarkdownForPreview(streamChunks)} />
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-                          {(mergedStreamBlocks.length > 0 || streamChunks || streamSegments.length > 0 || (streamProgress || isGenerating)) && (
-                            <div ref={streamOutputEndRef} aria-hidden />
-                          )}
+                          <StreamTimeline
+                            items={streamItems}
+                            endRef={streamOutputEndRef}
+                            loading={
+                              streamItems.length > 0 &&
+                              (streamProgress != null || isGenerating) &&
+                              !isCompleted
+                            }
+                          />
                         </div>
                       </div>
                     )}
@@ -916,36 +875,35 @@ const PlanPage = () => {
         <aside className="w-1/2 max-w-[50%] flex flex-col min-w-0 min-h-0 border-l border-[#D3E5E5]">
           <div className="p-6 border-b border-[#D3E5E5] bg-[#FFFDFC] shrink-0">
             <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2 min-w-0 flex-1 justify-between">
-                <div className="flex items-center gap-2">
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="p-1 rounded-full hover:bg-[#CCD3CF]/30 transition-colors shrink-0"
-                          aria-label="Phase Plan info"
-                        >
-                          <Info className="w-4 h-4" style={{ color: "#022019" }} />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipPortal>
-                        <TooltipContent
-                          side="bottom"
-                          align="start"
-                          sideOffset={8}
-                          className="max-w-[280px] bg-white text-gray-900 border border-gray-200 shadow-lg rounded-lg px-4 py-3 text-sm font-normal"
-                        >
-                          Phase Plan breaks the specification into ordered phases and implementation steps.
-                        </TooltipContent>
-                      </TooltipPortal>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <h2 className="text-[18px] font-bold leading-tight tracking-tight shrink-0 truncate min-w-0" style={{ color: "#022019" }} title={`Phase ${selectedPhaseIndex + 1}`}>
-                    {phasesFromApi.length > 0 ? `Phase ${selectedPhaseIndex + 1}` : "Phase Plan"}
-                  </h2>
+              <div className="flex items-center gap-2">
+              <h2 className="text-[18px] font-bold leading-tight tracking-tight shrink-0 truncate min-w-0" style={{ color: "#022019" }} title={`Phase ${selectedPhaseIndex + 1}`}>
+                {phasesFromApi.length > 0 ? `Phase ${selectedPhaseIndex + 1}` : "Phase Plan"}
+              </h2>
+              <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="p-1 rounded-full hover:bg-[#CCD3CF]/30 transition-colors shrink-0"
+                        aria-label="Phase Plan info"
+                      >
+                        <Info className="w-4 h-4" style={{ color: "#022019" }} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipPortal>
+                      <TooltipContent
+                        side="bottom"
+                        align="end"
+                        sideOffset={8}
+                        className="max-w-[280px] bg-white text-gray-900 border border-gray-200 shadow-lg rounded-lg px-4 py-3 text-sm font-normal"
+                      >
+                        Phase Plan breaks the specification into ordered phases and implementation steps.
+                      </TooltipContent>
+                    </TooltipPortal>
+                  </Tooltip>
+                </TooltipProvider>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={async () => {
@@ -991,26 +949,17 @@ const PlanPage = () => {
                   >
                     <ChevronRight className="w-4 h-4" style={{ color: "#022019" }} />
                   </button>
+                
                 </div>
-              </div>
             </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-6">
-            <div className="w-full space-y-4 relative">
-              <div className="absolute left-[26px] top-4 bottom-4 w-[1px] -z-10" style={{ backgroundColor: "#696D6D" }} />
+            <div className="absolute left-[26px] top-4 bottom-4 w-[1px] -z-10" style={{ backgroundColor: "#696D6D" }} />
 
-          {(streamProgress || isGenerating || streamChunks) && !isCompleted && (
-            <div className="h-full flex flex-col items-center justify-center text-center py-12">
-              <div className="animate-spin-slow mb-4">
-                <Image
-                  src="/images/logo.svg"
-                  width={48}
-                  height={48}
-                  alt="Loading"
-                  className="w-12 h-12"
-                />
-              </div>
+          {(streamProgress || isGenerating || streamItems.length > 0) && !isCompleted && (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <img src="/images/loader.gif" alt="Loading" className="w-16 h-16 mb-4" />
               <p className="text-sm font-medium text-[#102C2C]">Cooking ingredients for plan</p>
               <p className="text-xs text-zinc-500 mt-1">
                 {streamProgress ? `${streamProgress.step}: ${streamProgress.message}` : "Preparing plan…"}
@@ -1040,7 +989,7 @@ const PlanPage = () => {
             const phase = phasesFromApi[selectedPhaseIndex];
             if (!phase) return null;
             return (
-              <div className="space-y-4">
+              <div ref={planContentRef} className="space-y-4">
                 <h3 className="text-xl font-bold tracking-tight text-[#022019]">
                   {phase.name}
                 </h3>
@@ -1386,7 +1335,6 @@ const PlanPage = () => {
           )}
 
           <div ref={bottomRef} />
-            </div>
           </div>
 
           {isCompleted && planItems.length > 0 && (

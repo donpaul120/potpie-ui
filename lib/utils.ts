@@ -390,6 +390,38 @@ export function parseApiError(error: any): string {
  * @param maxLineLength - Maximum unbroken segment length before inserting breaks (default: 80)
  * @returns Normalized markdown string safe for constrained-width preview
  */
+/**
+ * Get the event payload from stream SSE data. Handles envelope shape and double-encoded data.
+ */
+export function getStreamEventPayload(data: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (data == null) return {};
+  const raw = (data as Record<string, unknown>)?.data ?? data;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return (data as Record<string, unknown>) ?? {};
+    }
+  }
+  return (raw as Record<string, unknown>) ?? (data as Record<string, unknown>);
+}
+
+/**
+ * Shorten raw ToolCallPart repr (e.g. from backend or cached) to "tool_name(args)" only.
+ * Strips tool_call_id, provider_details, thought_signature so only tool name and args show.
+ */
+export function shortenToolCallPartContent(text: string | undefined | null): string {
+  if (text == null || typeof text !== "string" || !text) return "";
+  let out = text;
+  // Remove , tool_call_id='...'
+  out = out.replace(/,?\s*tool_call_id\s*=\s*['"][^'"]*['"]/g, "");
+  // Remove , provider_details={...} (may contain nested braces and long thought_signature)
+  out = out.replace(/,?\s*provider_details\s*=\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g, "");
+  // Replace ToolCallPart(tool_name='X', args= with X(
+  out = out.replace(/ToolCallPart\s*\(\s*tool_name\s*=\s*['"]([^'"]+)['"]\s*,\s*args\s*=/g, "$1(");
+  return out;
+}
+
 export function normalizeMarkdownForPreview(
   content: string | undefined | null,
   maxLineLength: number = 80
@@ -397,9 +429,13 @@ export function normalizeMarkdownForPreview(
   if (content == null || typeof content !== "string") return "";
   if (!content) return "";
 
+  // Shorten any raw ToolCallPart repr to tool_name(args) before display
+  const shortened = shortenToolCallPartContent(content);
+  const toWrap = shortened !== content ? shortened : content;
+
   // Insert zero-width space (\u200B) into long unbroken segments to allow wrapping
   // This handles long URLs, file paths, hashes, etc.
-  return content.replace(
+  return toWrap.replace(
     /(\S{40,})/g,
     (match) => {
       // Insert zero-width space every maxLineLength characters
@@ -411,4 +447,38 @@ export function normalizeMarkdownForPreview(
       return result;
     }
   );
+}
+
+/** Detect if content looks like Markdown (headings, bold, code blocks). */
+export function looksLikeMarkdown(text: string): boolean {
+  if (!text || text.length > 5000) return false;
+  const trimmed = text.trim();
+  if (/^#+\s/m.test(trimmed)) return true;
+  if (/\*\*[^*]+\*\*|__[^_]+__/.test(trimmed)) return true;
+  if (/^```[\s\S]*?```/m.test(trimmed)) return true;
+  if (/^\s*[-*+]\s+/m.test(trimmed) && /\n/.test(trimmed)) return true;
+  return false;
+}
+
+/**
+ * Format tool result for display: valid JSON is pretty-printed; otherwise return as-is.
+ * Caller should use JSON view for parseable JSON and markdown/plain for the rest.
+ */
+export function formatToolResultForDisplay(raw: string): {
+  kind: "json" | "markdown" | "plain";
+  content: string;
+} {
+  if (raw == null || typeof raw !== "string") return { kind: "plain", content: "" };
+  const trimmed = raw.trim();
+  if (!trimmed) return { kind: "plain", content: "" };
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return { kind: "json", content: JSON.stringify(parsed, null, 2) };
+    } catch {
+      // not valid JSON
+    }
+  }
+  if (looksLikeMarkdown(trimmed)) return { kind: "markdown", content: trimmed };
+  return { kind: "plain", content: trimmed };
 }

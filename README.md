@@ -1,9 +1,9 @@
 <p align="center">
   <a href="https://potpie.ai?utm_source=github">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="../assets/readme_logo_dark.svg" />
-      <source media="(prefers-color-scheme: light)" srcset="../assets/logo_light.svg" />
-      <img src="../assets/logo_light.svg"  alt="Potpie AI logo" />
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme_logo_dark.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="assets/logo_light.svg" />
+      <img src="assets/logo_light.svg"  alt="Potpie AI logo" />
     </picture>
   </a>
 </p>
@@ -13,7 +13,7 @@
 
 
 <p align="center">
-<img width="700" alt="Potpie Dashboard" src="../assets/dashboard.gif" />
+<img width="700" alt="Potpie Dashboard" src="assets/dashboard.gif" />
 </p>
 
 <p align="center">

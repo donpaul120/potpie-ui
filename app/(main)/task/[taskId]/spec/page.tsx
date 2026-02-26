@@ -23,6 +23,7 @@ import {
   RotateCcw,
   RotateCw,
   Wrench,
+  ArrowLeft,
 } from "lucide-react";
 import SpecService from "@/services/SpecService";
 import PlanService from "@/services/PlanService";
@@ -44,7 +45,11 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { SharedMarkdown } from "@/components/chat/SharedMarkdown";
-import { normalizeMarkdownForPreview } from "@/lib/utils";
+import { getStreamEventPayload, normalizeMarkdownForPreview } from "@/lib/utils";
+import {
+  StreamTimeline,
+  type StreamTimelineItem,
+} from "@/components/stream/StreamTimeline";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -211,7 +216,7 @@ function FunctionalRequirementCard({ fr }: { fr: any }) {
   const extStrings = externalDeps.map((e: any) => typeof e === "string" ? e : (e?.name != null ? String(e.name) : String(e)));
   const appendix = fr?.appendix != null && typeof fr.appendix === "object" ? fr.appendix : null;
   return (
-    <div className="rounded-lg border border-[#D3E5E5] bg-zinc-50/50 p-4 space-y-3">
+    <div className="rounded-lg border border-[#E5E8E6] bg-zinc-50/50 p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-mono text-primary-color">{id}</span>
         {priority && <span className="text-xs font-medium text-zinc-600 capitalize">{priority}</span>}
@@ -233,7 +238,7 @@ function FunctionalRequirementCard({ fr }: { fr: any }) {
           <p className="text-xs font-semibold text-primary-color uppercase tracking-wide mb-1">Depends on</p>
           <div className="flex flex-wrap gap-1.5">
             {requirementDeps.map((reqId: string, i: number) => (
-              <span key={i} className="px-2 py-0.5 bg-zinc-100 border border-[#D3E5E5] rounded text-xs font-mono text-primary-color">
+              <span key={i} className="px-2 py-0.5 bg-zinc-100 border border-[#E5E8E6] rounded text-xs font-mono text-primary-color">
                 {reqId}
               </span>
             ))}
@@ -275,7 +280,7 @@ function FunctionalRequirementCard({ fr }: { fr: any }) {
       {appendix && Object.keys(appendix).length > 0 && (
         <div>
           <p className="text-xs font-semibold text-primary-color uppercase tracking-wide mb-1">Appendix</p>
-          <pre className="text-xs text-muted-foreground bg-white border border-[#D3E5E5] rounded p-3 overflow-x-auto">
+          <pre className="text-xs text-muted-foreground bg-white border border-[#E5E8E6] rounded p-3 overflow-x-auto">
             {JSON.stringify(appendix, null, 2)}
           </pre>
         </div>
@@ -306,7 +311,7 @@ function SpecContextBlock({ context }: { context: Record<string, any> }) {
       {items.map(({ label, value }, i) => (
         <div key={i}>
           <p className="text-xs font-semibold text-primary-color uppercase tracking-wide mb-1">{label}</p>
-          <SharedMarkdown content={value} className="text-sm text-muted-foreground [&_p]:my-0 rounded-md border border-[#D3E5E5] bg-zinc-50/50 p-3" />
+          <SharedMarkdown content={value} className="text-sm text-muted-foreground [&_p]:my-0 rounded-md border border-[#E5E8E6] bg-zinc-50/50 p-3" />
         </div>
       ))}
     </div>
@@ -347,7 +352,7 @@ function SpecFallbackView({ spec }: { spec: SpecificationOutput }) {
               {content.map((item: any, j: number) => <FunctionalRequirementCard key={j} fr={item} />)}
             </div>
           ) : (
-            <div className="text-sm text-muted-foreground leading-relaxed rounded-md border border-[#D3E5E5] bg-zinc-50/50 p-4">
+            <div className="text-sm text-muted-foreground leading-relaxed rounded-md border border-[#E5E8E6] bg-zinc-50/50 p-4">
               {Array.isArray(content) ? (
                 <ul className="list-disc pl-4 space-y-1">
                   {content.map((item: any, j: number) => (
@@ -368,39 +373,29 @@ function SpecFallbackView({ spec }: { spec: SpecificationOutput }) {
 }
 
 const Badge = ({ children, icon: Icon }: { children: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }) => (
-  <div className="flex items-center gap-1.5 px-2 py-0.5 border border-[#D3E5E5] rounded text-xs font-medium text-primary-color">
+  <div className="flex items-center gap-1.5 px-2 py-0.5 border border-[#E5E8E6] rounded text-xs font-medium text-primary-color">
     {Icon && <Icon className="w-3.5 h-3.5" />}
     {children}
   </div>
 );
 
 const PlanTabs = ({ plan }: { plan: Plan }) => {
-  const categories: { id: keyof Plan; label: string; items: Plan["add"] }[] = [
-    { id: "add", label: "Create", items: plan.add },
-    { id: "modify", label: "Update", items: plan.modify },
-    { id: "fix", label: "Fix", items: plan.fix },
-  ];
+  // Combine all items from all categories
+  const allItems = [...plan.add, ...plan.modify, ...plan.fix];
+  const defaultOpenValues = allItems.map((item) => item.id);
 
   return (
-    <div className="space-y-10">
-      {categories.map((cat) => {
-        if (cat.items.length === 0) return null;
-        const defaultOpenValues = cat.items.map((item) => item.id);
-        return (
-          <div key={cat.id} className="space-y-4">
-            <h3 className="text-sm font-semibold text-primary-color border-b border-[#D3E5E5] pb-2">
-              {cat.label} ({cat.items.length})
-            </h3>
-            <Accordion
-              type="multiple"
-              defaultValue={defaultOpenValues}
-              className="space-y-4"
-            >
-              {cat.items.map((item) => (
+    <div className="space-y-4">
+      <Accordion
+        type="multiple"
+        defaultValue={defaultOpenValues}
+        className="space-y-4"
+      >
+        {allItems.map((item) => (
           <AccordionItem
             key={item.id}
             value={item.id}
-            className="bg-background border border-[#D3E5E5] transition-all rounded-lg overflow-hidden data-[state=open]:border-[#D3E5E5] data-[state=open]:shadow-sm border-[#D3E5E5] hover:border-[#D3E5E5]"
+            className="bg-background border border-[#E5E8E6] transition-all rounded-lg overflow-hidden data-[state=open]:border-[#E5E8E6] data-[state=open]:shadow-sm border-[#E5E8E6] hover:border-[#E5E8E6]"
           >
             <AccordionTrigger className="p-4 flex justify-between items-start cursor-pointer select-none hover:no-underline [&>svg]:hidden [&[data-state=open] svg:last-child]:rotate-180">
               <div className="flex gap-3 flex-1 min-w-0">
@@ -422,7 +417,7 @@ const PlanTabs = ({ plan }: { plan: Plan }) => {
               </div>
             </AccordionTrigger>
 
-            <AccordionContent className="px-5 pb-6 pt-5 space-y-6 border-t border-[#D3E5E5] font-sans">
+            <AccordionContent className="px-5 pb-6 pt-5 space-y-6 border-t border-t-[1px] border-[#E5E8E6] font-sans">
               {/* Depends on (requirement IDs), Libraries, External dependencies — no Target Files per API */}
               {((item.requirementDependencies?.length ?? 0) > 0 || (item.dependencies?.length ?? 0) > 0 || (item.externalConnections?.length ?? 0) > 0) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
@@ -437,7 +432,7 @@ const PlanTabs = ({ plan }: { plan: Plan }) => {
                         {item.requirementDependencies?.map((reqId, i) => (
                           <span
                             key={i}
-                            className="px-3 py-1.5 bg-zinc-50 border border-[#D3E5E5] rounded-md text-xs font-mono text-primary-color"
+                            className="px-3 py-1.5 bg-zinc-50 border border-[#E5E8E6] rounded-md text-xs font-mono text-primary-color"
                           >
                             {typeof reqId === "string" ? reqId : String(reqId)}
                           </span>
@@ -456,7 +451,7 @@ const PlanTabs = ({ plan }: { plan: Plan }) => {
                         {item.dependencies?.map((dep, i) => (
                           <span
                             key={i}
-                            className="px-3 py-1.5 bg-zinc-50 border border-[#D3E5E5] rounded-md text-xs font-mono text-primary-color"
+                            className="px-3 py-1.5 bg-zinc-50 border border-[#E5E8E6] rounded-md text-xs font-mono text-primary-color"
                           >
                             {typeof dep === "string" ? dep : (dep && typeof dep === "object" && "name" in dep ? String((dep as { name?: string }).name) : String(dep))}
                           </span>
@@ -493,7 +488,7 @@ const PlanTabs = ({ plan }: { plan: Plan }) => {
                     <Info className="w-3.5 h-3.5" />
                     Context
                   </p>
-                  <div className="bg-zinc-50 border border-[#D3E5E5] rounded-md p-4">
+                  <div className="bg-zinc-50 border border-[#E5E8E6] rounded-md p-4">
                     <div className="text-sm text-muted-foreground leading-relaxed">
                       <SharedMarkdown content={item.context} className="text-muted-foreground [&_p]:text-muted-foreground [&_*]:text-left [&_p]:mb-2 [&_p:last-child]:mb-0" />
                     </div>
@@ -502,11 +497,8 @@ const PlanTabs = ({ plan }: { plan: Plan }) => {
               )}
             </AccordionContent>
           </AccordionItem>
-              ))}
-            </Accordion>
-          </div>
-        );
-      })}
+        ))}
+      </Accordion>
     </div>
   );
 };
@@ -552,19 +544,14 @@ const SpecPage = () => {
   const [regenerateSpecKey, setRegenerateSpecKey] = useState(0);
   /** Live streaming progress when using spec generate-stream (step + message). */
   const [streamProgress, setStreamProgress] = useState<{ step: string; message: string } | null>(null);
-  /** Accumulated streaming text (chunk events) from workflows backend. */
-  const [streamChunks, setStreamChunks] = useState("");
-  /** Recent stream events (tool_call_start/end, subagent_start/end) for left-pane activity. */
-  const [streamEvents, setStreamEvents] = useState<{ id: string; type: string; label: string }[]>([]);
-  /** Output segments: one per tool_call_end (content streamed since previous tool end). */
-  const [streamSegments, setStreamSegments] = useState<{ id: string; label: string; content: string }[]>([]);
+  /** Interleaved stream: chunks (thinking/response) and tool calls in arrival order. */
+  const [streamItems, setStreamItems] = useState<StreamTimelineItem[]>([]);
   const streamAbortRef = useRef<AbortController | null>(null);
-  const streamEventIdRef = useRef(0);
-  const streamChunksRef = useRef("");
+  const streamItemIdRef = useRef(0);
   const streamOutputEndRef = useRef<HTMLDivElement>(null);
-  const streamChunkBoxRef = useRef<HTMLDivElement>(null);
   const searchParams = useSearchParams();
   const runIdFromUrl = searchParams.get("run_id");
+  const repoNameFromUrl = searchParams.get("repoName");
 
   // Chat UI state (first message = new chat input; wired to spec chat API)
   type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -592,35 +579,12 @@ const SpecPage = () => {
     }
   }, [recipeId, runIdFromUrl, specProgress, router]);
 
-  // Interleave: for each tool show start + end together (Running → Completed), then its output box (backend sends call_id on both start/end to pair them)
-  type StreamBlock =
-    | { key: string; kind: "event"; event: (typeof streamEvents)[0] }
-    | { key: string; kind: "segment"; segment: (typeof streamSegments)[0] };
-  const mergedStreamBlocks = useMemo((): StreamBlock[] => {
-    const blocks: StreamBlock[] = [];
-    for (const ev of streamEvents) {
-      blocks.push({ key: ev.id, kind: "event", event: ev });
-      if (ev.type === "tool_end") {
-        const seg = streamSegments.find((s) => s.id === `seg-${ev.id}`);
-        if (seg) blocks.push({ key: seg.id, kind: "segment", segment: seg });
-      }
-    }
-    return blocks;
-  }, [streamEvents, streamSegments]);
-
-  // Auto-scroll tool output to bottom when new events/segments/chunks arrive
+  // Auto-scroll to end when stream items change
   useEffect(() => {
-    if (mergedStreamBlocks.length > 0 || streamChunks) {
+    if (streamItems.length > 0) {
       streamOutputEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [mergedStreamBlocks.length, streamChunks]);
-
-  // Auto-scroll inside the live chunk box when content grows
-  useEffect(() => {
-    if (streamChunks && streamChunkBoxRef.current) {
-      streamChunkBoxRef.current.scrollTo({ top: streamChunkBoxRef.current.scrollHeight, behavior: "smooth" });
-    }
-  }, [streamChunks]);
+  }, [streamItems.length]);
 
   // Initialize chat with user prompt (from new chat page) and assistant response
   useEffect(() => {
@@ -746,14 +710,16 @@ const SpecPage = () => {
         });
         setAnswers(answersMap);
 
-        dispatch(
-          setRepoAndBranchForTask({
-            taskId: recipeId,
-            repoName: repoName,
-            branchName: branchName,
-            projectId: recipeDetails.project_id || undefined,
-          })
-        );
+        if (!repoNameFromUrl?.trim() && typeof window !== "undefined" && !new URLSearchParams(window.location.search).get("repoName")?.trim()) {
+          dispatch(
+            setRepoAndBranchForTask({
+              taskId: recipeId,
+              repoName: repoName,
+              branchName: branchName,
+              projectId: recipeDetails.project_id || undefined,
+            })
+          );
+        }
 
         hasInitializedRef.current = true;
       } catch (err: any) {
@@ -811,15 +777,12 @@ const SpecPage = () => {
       streamAbortRef.current?.abort();
       streamAbortRef.current = new AbortController();
       setStreamProgress({ step: "Connecting…", message: "Opening live stream" });
-      setStreamChunks("");
-      setStreamSegments([]);
-      setStreamEvents([]);
-      streamChunksRef.current = "";
+      setStreamItems([]);
 
       SpecService.connectSpecStream(recipeId, runIdFromUrl, {
         signal: streamAbortRef.current.signal,
         onEvent: (eventType, data) => {
-          const payload = (data?.data as Record<string, unknown>) ?? data;
+          const payload = getStreamEventPayload(data);
           // queued: task queued
           if (eventType === "queued") {
             setStreamProgress({ step: "Queued", message: (payload?.message as string) ?? "Task queued for processing" });
@@ -835,39 +798,57 @@ const SpecPage = () => {
               message: (payload.message as string) ?? "",
             });
           }
-          // chunk: streaming text (thinking/tokens)
+          // chunk: append to last chunk item or push new (keeps thinking/response in order)
           if (eventType === "chunk" && payload?.content) {
             const content = String(payload.content);
-            setStreamChunks((prev) => {
-              const next = prev + content;
-              streamChunksRef.current = next;
+            setStreamItems((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.type === "chunk") {
+                return [...prev.slice(0, -1), { ...last, content: last.content + content }];
+              }
+              return [...prev, { type: "chunk", id: `chunk-${++streamItemIdRef.current}`, content }];
+            });
+          }
+          // tool_call_start: add tool inline (running)
+          if (eventType === "tool_call_start" && payload?.tool) {
+            const call_id = (payload.call_id as string) ?? `tool-${++streamItemIdRef.current}`;
+            const label = String(payload.tool);
+            setStreamItems((prev) => [
+              ...prev,
+              { type: "tool", id: call_id, label, phase: "running" as const },
+            ]);
+          }
+          // tool_call_end: mark that tool done and set result
+          if (eventType === "tool_call_end" && payload?.tool) {
+            const call_id = payload.call_id as string | undefined;
+            const label = String(payload.tool);
+            const result = payload.result;
+            const segmentContent =
+              result !== undefined && result !== null
+                ? typeof result === "object"
+                  ? JSON.stringify(result, null, 2)
+                  : String(result)
+                : "";
+            setStreamItems((prev) => {
+              const idx = call_id
+                ? prev.findIndex((it) => it.type === "tool" && it.id === call_id)
+                : prev.findLastIndex(
+                    (it) => it.type === "tool" && it.phase === "running" && it.label === label
+                  );
+              if (idx === -1) return prev;
+              const next = [...prev];
+              const cur = next[idx];
+              if (cur.type === "tool")
+                next[idx] = { ...cur, phase: "done" as const, result: segmentContent };
               return next;
             });
           }
-          // tool_call_start / tool_call_end: show in activity list; on tool_call_end push current chunks as a segment
-          if (eventType === "tool_call_start" && payload?.tool) {
-            const id = `tool-start-${++streamEventIdRef.current}`;
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "tool_start", label: `Running ${String(payload.tool)}` }]);
-          }
-          if (eventType === "tool_call_end" && payload?.tool) {
-            const id = `tool-end-${++streamEventIdRef.current}`;
-            const duration = payload.duration_ms != null ? ` (${payload.duration_ms}ms)` : "";
-            const label = String(payload.tool);
-            const contentToPush = streamChunksRef.current;
-            // Always push a segment (same id as event) so mergedStreamBlocks can pair by id; use empty string when no content
-            setStreamSegments((prev) => [...prev, { id: `seg-${id}`, label, content: contentToPush || "" }]);
-            setStreamChunks("");
-            streamChunksRef.current = "";
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "tool_end", label: `Completed ${label}${duration}` }]);
-          }
+          // subagent events: optional inline markers (could add as stream items later)
           if (eventType === "subagent_start" && payload?.agent) {
-            const id = `subagent-start-${++streamEventIdRef.current}`;
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "subagent_start", label: `Agent: ${String(payload.agent)}` }]);
+            // no-op for now; could push a small "Agent: X" chunk if desired
           }
           if (eventType === "subagent_end" && payload?.agent) {
-            const id = `subagent-end-${++streamEventIdRef.current}`;
-            const duration = payload.duration_ms != null ? ` (${payload.duration_ms}ms)` : "";
-            setStreamEvents((prev) => [...prev.slice(-29), { id, type: "subagent_end", label: `Done ${String(payload.agent)}${duration}` }]);
+            // no-op
           }
           // end: stream finished successfully — keep tool calls and preview on left, just stop progress
           if (eventType === "end") {
@@ -879,16 +860,15 @@ const SpecPage = () => {
           // error: clear stream state and refetch
           if (eventType === "error") {
             setStreamProgress(null);
-            setStreamChunks("");
-            setStreamSegments([]);
-            setStreamEvents([]);
-            streamChunksRef.current = "";
+            setStreamItems([]);
             setRegenerateSpecKey((k) => k + 1);
             SpecService.getSpecProgressByRecipeId(recipeId).then(setSpecProgress).catch(() => {});
             router.replace(`/task/${recipeId}/spec`, { scroll: false });
           }
         },
         onError: async (msg) => {
+          // Don't treat abort as an error - expected when switching streams or regenerating
+          if (/abort/i.test(msg)) return;
           // On stream error, check if spec is already completed - if so, don't show error toast
           try {
             const fallbackStatus = await SpecService.getSpecProgressByRecipeId(recipeId);
@@ -904,10 +884,7 @@ const SpecPage = () => {
             // Status check failed, show error
           }
           setStreamProgress(null);
-          setStreamChunks("");
-          setStreamSegments([]);
-          setStreamEvents([]);
-          streamChunksRef.current = "";
+          setStreamItems([]);
           setError(msg);
           toast.error("Live stream failed. Showing progress by polling.");
           router.replace(`/task/${recipeId}/spec`, { scroll: false });
@@ -1012,41 +989,37 @@ const SpecPage = () => {
   const { plan: normalizedPlan, rawSpec: rawSpecification } = normalizeSpecFromProgress(specProgress ?? undefined);
   const hasSpecContent = normalizedPlan !== null || rawSpecification !== null;
 
-  // Persist thinking (stream segments/events) when spec is completed so it survives refresh
+  // Persist stream timeline when spec is completed so it survives refresh
   useEffect(() => {
     if (!recipeId || status !== "COMPLETED" || !hasSpecContent) return;
-    if (streamSegments.length > 0 || streamEvents.length > 0) {
+    if (streamItems.length > 0) {
       try {
         sessionStorage.setItem(
           `${THINKING_STORAGE_KEY}_${recipeId}`,
-          JSON.stringify({ segments: streamSegments, events: streamEvents })
+          JSON.stringify({ streamItems })
         );
       } catch {
         // ignore storage errors
       }
     }
-  }, [recipeId, status, hasSpecContent, streamSegments, streamEvents]);
+  }, [recipeId, status, hasSpecContent, streamItems]);
 
-  // Restore thinking from sessionStorage on load when spec is completed but we have no stream state (e.g. after refresh)
+  // Restore stream timeline from sessionStorage on load when spec is completed (e.g. after refresh)
   useEffect(() => {
     if (!recipeId || status !== "COMPLETED" || !hasSpecContent || runIdFromUrl) return;
-    if (streamSegments.length > 0 || streamEvents.length > 0) return;
+    if (streamItems.length > 0) return;
     if (hasRestoredThinkingRef.current === recipeId) return;
     hasRestoredThinkingRef.current = recipeId;
     try {
       const raw = sessionStorage.getItem(`${THINKING_STORAGE_KEY}_${recipeId}`);
       if (!raw) return;
-      const data = JSON.parse(raw) as { segments?: { id: string; label: string; content: string }[]; events?: { id: string; type: string; label: string }[] };
-      const segments = Array.isArray(data.segments) ? data.segments : [];
-      const events = Array.isArray(data.events) ? data.events : [];
-      if (segments.length > 0 || events.length > 0) {
-        setStreamSegments(segments);
-        setStreamEvents(events);
-      }
+      const data = JSON.parse(raw) as { streamItems?: StreamTimelineItem[] };
+      const items = Array.isArray(data.streamItems) ? data.streamItems : [];
+      if (items.length > 0) setStreamItems(items);
     } catch {
       // ignore
     }
-  }, [recipeId, status, hasSpecContent, runIdFromUrl, streamSegments.length, streamEvents.length]);
+  }, [recipeId, status, hasSpecContent, runIdFromUrl, streamItems.length]);
 
   // Reset restore ref when recipe changes so we can restore for the new recipe
   useEffect(() => {
@@ -1092,9 +1065,9 @@ const SpecPage = () => {
   // When we have run_id we go straight to spec page and show streaming; no loading screen
   if (recipeId && isLoading && !specProgress && !runIdFromUrl) {
     return (
-      <div className="flex items-center justify-center min-h-[80vh]">
-        <Loader2 className="w-6 h-6 animate-spin text-primary-color" />
-        <p className="ml-3 text-primary-color">Loading spec generation...</p>
+      <div className="flex flex-col items-center justify-center min-h-[80vh]">
+        <img src="/images/loader.gif" alt="Loading" className="w-16 h-16 mb-4" />
+        <p className="text-primary-color">Loading spec generation...</p>
       </div>
     );
   }
@@ -1122,19 +1095,34 @@ const SpecPage = () => {
     <div className="h-screen flex flex-col overflow-hidden bg-background text-primary-color font-sans selection:bg-zinc-100 antialiased">
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left: Chat area — fixed height so only messages scroll; input always visible */}
-        <div className="w-1/2 max-w-[50%] flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-[#D3E5E5] bg-[#FAF8F7] chat-panel-contained">
+        <div className="w-1/2 max-w-[50%] flex flex-col min-w-0 min-h-0 overflow-hidden border-r border-r-[1px] border-[#E5E8E6] bg-[#FAF8F7] chat-panel-contained">
           {/* Chat header */}
-          <div className="flex justify-between items-center px-6 py-4 shrink-0">
-            <h1 className="text-lg font-bold text-primary-color truncate capitalize">
-              {recipeData?.user_prompt?.slice(0, 50) || "Chat Name"}
-              {(recipeData?.user_prompt?.length ?? 0) > 50 ? "…" : ""}
-            </h1>
-            {projectData && (
-              <div className="flex items-center gap-2 shrink-0">
-                <Badge icon={Github}>{projectData.repo}</Badge>
-                <Badge icon={GitBranch}>{projectData.branch}</Badge>
+          <div className="px-6 pt-4 pb-2 shrink-0 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (!recipeId) return;
+                router.push(`/task/${recipeId}/qna`);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary-color px-0 py-0.5 rounded-md hover:underline w-fit"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to questions
+            </button>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-lg font-bold text-primary-color truncate capitalize">
+                {recipeData?.user_prompt?.slice(0, 50) || "Chat Name"}
+                {(recipeData?.user_prompt?.length ?? 0) > 50 ? "…" : ""}
+              </h1>
+              <div className="flex items-center gap-2 shrink-0 mt-1 sm:mt-0">
+                <Badge icon={Github}>
+                  {repoNameFromUrl || storedRepoContext?.repoName || projectData?.repo || "Unknown Repository"}
+                </Badge>
+                <Badge icon={GitBranch}>
+                  {storedRepoContext?.branchName || projectData?.branch || "main"}
+                </Badge>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Messages — only this section scrolls */}
@@ -1160,82 +1148,26 @@ const SpecPage = () => {
                         Turning your idea into a structured specification. Your goals and requirements will appear in the panel on the right—once they&apos;re ready, we can refine them together.
                       </div>
                     </div>
-                    {/* Agent output: full chat width; Tool calls and Output as separate blocks */}
-                    {(streamProgress || isGenerating || mergedStreamBlocks.length > 0 || streamChunks || streamSegments.length > 0) && (
+                    {/* Agent output: interleaved thinking/response and tool calls in stream order */}
+                    {(streamProgress || isGenerating || streamItems.length > 0) && (
                       <div className="flex justify-start w-full overflow-hidden" style={{ contain: "inline-size" }}>
                         <div className="w-10 h-10 rounded-lg shrink-0 mr-3 mt-0.5 flex items-center justify-center bg-[#102C2C] self-start opacity-0" aria-hidden />
                         <div className="min-w-0 flex-1 overflow-hidden" style={{ width: "calc(100% - 52px)" }}>
-                          {(streamProgress || isGenerating) && !streamChunks && (
+                          {(streamProgress || isGenerating) && streamItems.length === 0 && (
                             <p className="text-xs text-zinc-500 flex items-center gap-2 mb-2">
                               <span className="inline-block w-4 h-4 rounded-full border-2 border-[#102C2C] border-t-transparent animate-spin" />
                               {streamProgress ? `${streamProgress.step}: ${streamProgress.message}` : "Generating specification…"}
                             </p>
                           )}
-                          {mergedStreamBlocks.length > 0 && (
-                            <div className="mb-3">
-                              <details className="group/tools rounded-lg bg-[#F5F5F4] min-w-0 overflow-hidden">
-                                <summary className="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                                  <span className="text-xs font-medium text-zinc-800">
-                                    Tool calls ({mergedStreamBlocks.filter((b) => b.kind === "segment").length})
-                                  </span>
-                                  <ChevronDown className="w-4 h-4 shrink-0 text-zinc-500 transition-transform duration-200 group-open/tools:rotate-180" aria-hidden />
-                                </summary>
-                                <div className="space-y-3 min-w-0 overflow-hidden pt-1 pb-0">
-                                {mergedStreamBlocks.map((block) =>
-                                  block.kind === "event" ? (
-                                    (block.event.type === "tool_start" || block.event.type === "tool_end") ? (
-                                      <span key={block.key} className="hidden" aria-hidden />
-                                    ) : (
-                                      <p key={block.key} className="text-xs text-zinc-600 font-mono break-words">
-                                        {block.event.type === "subagent_start" ? "▶ " : "✓ "}{block.event.label}
-                                      </p>
-                                    )
-                                  ) : (
-                                    <details
-                                      key={block.key}
-                                      className="group rounded-lg bg-[#F5F5F4] min-w-0 overflow-hidden"
-                                    >
-                                      <summary className="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer select-none [&::-webkit-details-marker]:hidden">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <Check className="w-4 h-4 shrink-0 text-emerald-600" aria-hidden />
-                                          <span className="text-xs font-medium text-zinc-800 truncate">
-                                            {block.segment.label}
-                                          </span>
-                                        </div>
-                                        <ChevronDown
-                                          className="w-4 h-4 shrink-0 text-zinc-500 transition-transform duration-200 group-open:rotate-180"
-                                          aria-hidden
-                                        />
-                                      </summary>
-                                      <div
-                                        ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
-                                        className="bg-[#FAF8F7] p-3 overflow-y-auto overflow-x-hidden min-w-0 text-xs text-zinc-700 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                                        style={{ msOverflowStyle: "none" }}
-                                      >
-                                        <SharedMarkdown content={normalizeMarkdownForPreview(block.segment.content)} />
-                                      </div>
-                                    </details>
-                                  )
-                                )}
-                                </div>
-                              </details>
-                            </div>
-                          )}
-                          {(streamChunks || streamSegments.length > 0 || (streamProgress || isGenerating)) && (
-                            <div className="space-y-2 min-w-0 overflow-hidden">
-                              {streamChunks ? (
-                                <div
-                                  ref={streamChunkBoxRef}
-                                  className="rounded-lg bg-[#FAF8F7] p-3 overflow-y-auto overflow-x-hidden min-w-0"
-                                >
-                                  <SharedMarkdown content={normalizeMarkdownForPreview(streamChunks)} />
-                                </div>
-                              ) : null}
-                            </div>
-                          )}
-                          {(mergedStreamBlocks.length > 0 || streamChunks || streamSegments.length > 0 || (streamProgress || isGenerating)) && (
-                            <div ref={streamOutputEndRef} aria-hidden />
-                          )}
+                          <StreamTimeline
+                            items={streamItems}
+                            endRef={streamOutputEndRef}
+                            loading={
+                              streamItems.length > 0 &&
+                              (streamProgress != null || isGenerating) &&
+                              status !== "COMPLETED"
+                            }
+                          />
                         </div>
                       </div>
                     )}
@@ -1291,13 +1223,13 @@ const SpecPage = () => {
         <div
           className="overflow-hidden flex-none flex flex-col max-w-[50%]"
           style={{
-            width: (specProgress != null || runIdFromUrl || streamProgress || isGenerating || !!streamChunks) ? "50%" : "0",
+            width: (specProgress != null || runIdFromUrl || streamProgress || isGenerating || streamItems.length > 0) ? "50%" : "0",
             minWidth: 0,
             transition: "width 0.35s ease-out",
           }}
         >
-          <aside className="h-full w-full min-w-[280px] flex flex-col border-l border-[#D3E5E5]">
-            <div className="p-6 border-b border-[#D3E5E5]">
+          <aside className="h-full w-full min-w-[280px] flex flex-col border-l border-l-[1px] border-[#E5E8E6]">
+            <div className="p-6 border-b border-[#E5E8E6]">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2 min-w-0 flex-1 justify-between">
                   <div className="flex items-center gap-2">
@@ -1375,17 +1307,6 @@ const SpecPage = () => {
                     )}
                   </button>
                 </div>
-                {status === "COMPLETED" && !isCancelled && hasSpecContent && (
-                  <button
-                    onClick={() => {
-                      startNavigation();
-                      router.push(`/task/${recipeId}/plan`);
-                    }}
-                    className="shrink-0 px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-2 bg-[#022019] text-white hover:opacity-90"
-                  >
-                    GENERATE PLAN
-                  </button>
-                )}
               </div>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6">
@@ -1397,17 +1318,9 @@ const SpecPage = () => {
                   <SpecFallbackView spec={rawSpecification} />
                 ) : null}
               </div>
-            ) : (streamProgress || isGenerating || (streamChunks && status !== "COMPLETED")) ? (
+            ) : (streamProgress || isGenerating || (streamItems.length > 0 && status !== "COMPLETED")) ? (
               <div className="h-full flex flex-col items-center justify-center text-center">
-                <div className="animate-spin-slow mb-4">
-                  <Image
-                    src="/images/logo.svg"
-                    width={48}
-                    height={48}
-                    alt="Loading"
-                    className="w-12 h-12"
-                  />
-                </div>
+                <img src="/images/loader.gif" alt="Loading" className="w-16 h-16 mb-4" />
                 <p className="text-sm font-medium text-[#102C2C]">Cooking ingredients for spec</p>
                 <p className="text-xs text-zinc-500 mt-1">
                   {streamProgress ? `${streamProgress.step}: ${streamProgress.message}` : "Preparing specification…"}
@@ -1417,6 +1330,20 @@ const SpecPage = () => {
               <p className="text-sm text-zinc-500">Specification will appear here when ready.</p>
             )}
             </div>
+            {/* Sticky bottom bar with Generate Plan button */}
+            {status === "COMPLETED" && !isCancelled && hasSpecContent && (
+              <div className="sticky bottom-0 left-0 right-0 p-4 bg-white border-t border-[#E5E8E6] flex justify-end">
+                <button
+                  onClick={() => {
+                    startNavigation();
+                    router.push(`/task/${recipeId}/plan`);
+                  }}
+                  className="shrink-0 px-6 py-2 rounded-lg font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 bg-primary text-primary-foreground hover:opacity-90"
+                >
+                  GENERATE PLAN
+                </button>
+              </div>
+            )}
           </aside>
         </div>
       </div>
