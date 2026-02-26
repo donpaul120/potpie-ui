@@ -588,7 +588,7 @@ function apiToolCallToPart(tc: ToolCall): StreamingToolCallPart {
     args: args as ToolCallMessagePart["args"],
     argsText,
     result,
-    isError: false,
+    isError: tc.event_type === "error",
   };
 }
 
@@ -602,11 +602,10 @@ function dedupeToolCalls(toolCalls: ToolCall[]): ToolCall[] {
       byId.set(tc.call_id, { ...tc });
     } else {
       // Merge: prefer result/delegation_result (or error) event for final state
-      const eventType = tc.event_type as string;
       if (
         tc.event_type === "result" ||
         tc.event_type === "delegation_result" ||
-        eventType === "error"
+        tc.event_type === "error"
       ) {
         byId.set(tc.call_id, {
           ...existing,

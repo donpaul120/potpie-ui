@@ -7,7 +7,7 @@ import { isMultimodalEnabled } from "@/lib/utils";
 /** Tool call from message history / stream API */
 export interface ToolCall {
   call_id: string;
-  event_type: "call" | "result" | "delegation_call" | "delegation_result";
+  event_type: "call" | "result" | "delegation_call" | "delegation_result" | "error";
   tool_name: string;
   tool_response: string;
   tool_call_details: {
