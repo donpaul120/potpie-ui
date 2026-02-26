@@ -15,7 +15,10 @@ import {
   type PendingAttachment,
 } from "@assistant-ui/react";
 import { useEffect, useCallback, useMemo, useState, useRef } from "react";
-import ChatService, { type ToolCall } from "@/services/ChatService";
+import ChatService, {
+  type ToolCall,
+  type LoadedMessage,
+} from "@/services/ChatService";
 import { SessionInfo } from "@/lib/types/session";
 import { isMultimodalEnabled } from "@/lib/utils";
 import { useDispatch, useSelector } from "react-redux";
@@ -38,21 +41,8 @@ interface StreamingToolCallPart extends ToolCallMessagePart {
   isError?: boolean;
 }
 
-// Type for backend message structure (from loadMessages / API)
-interface BackendMessage {
-  id: string;
-  text: string;
-  sender: "user" | "agent";
-  citations: unknown[];
-  has_attachments?: boolean;
-  attachments?: Array<{
-    attachment_type: string;
-    download_url?: string;
-  }>;
-  created_at?: string;
-  tool_calls?: ToolCall[] | null;
-  thinking?: string | null;
-}
+// Backend message shape (loadMessages returns LoadedMessage[])
+type BackendMessage = LoadedMessage & { created_at?: string };
 
 // Resume session info interface
 interface ResumeSessionInfo {
@@ -574,8 +564,8 @@ const createChatAdapter = (
 // Map API tool call to assistant-ui ToolCallMessagePart (for history-loaded messages)
 function apiToolCallToPart(tc: ToolCall): StreamingToolCallPart {
   const rawArgs = tc.tool_call_details?.arguments;
-  const args =
-    typeof rawArgs === "object" && rawArgs !== null ? rawArgs : {};
+  const args: Record<string, unknown> =
+    typeof rawArgs === "object" && rawArgs !== null ? (rawArgs as Record<string, unknown>) : {};
   const argsText =
     typeof rawArgs === "string"
       ? rawArgs
@@ -585,14 +575,17 @@ function apiToolCallToPart(tc: ToolCall): StreamingToolCallPart {
     response: tc.tool_response,
     details:
       typeof tc.tool_call_details === "object" && tc.tool_call_details !== null
-        ? { ...tc.tool_call_details, summary: tc.tool_call_details.summary }
+        ? {
+            ...tc.tool_call_details,
+            summary: tc.tool_call_details.summary ?? "",
+          }
         : { summary: "" },
   };
   return {
     type: "tool-call",
     toolCallId: tc.call_id,
     toolName: tc.tool_name,
-    args,
+    args: args as ToolCallMessagePart["args"],
     argsText,
     result,
     isError: false,
@@ -608,11 +601,12 @@ function dedupeToolCalls(toolCalls: ToolCall[]): ToolCall[] {
     if (!existing) {
       byId.set(tc.call_id, { ...tc });
     } else {
-      // Merge: prefer result/delegation_result event for final state
+      // Merge: prefer result/delegation_result (or error) event for final state
+      const eventType = tc.event_type as string;
       if (
         tc.event_type === "result" ||
         tc.event_type === "delegation_result" ||
-        tc.event_type === "error"
+        eventType === "error"
       ) {
         byId.set(tc.call_id, {
           ...existing,
@@ -645,30 +639,32 @@ const convertToThreadMessage = (msg: BackendMessage): ThreadMessage => {
       msg.attachments &&
       msg.attachments.length > 0
     ) {
-      const imageAttachments = msg.attachments.filter(
-        (attachment: { attachment_type: string; download_url?: string }) =>
+      const attachmentList = msg.attachments as Array<{
+        attachment_type: string;
+        download_url?: string;
+      }>;
+      const imageAttachments = attachmentList.filter(
+        (attachment) =>
           attachment.attachment_type === "image" && attachment.download_url
       );
-      imageAttachments.forEach(
-        (attachment: { download_url?: string }, index: number) => {
-          if (attachment.download_url) {
-            content.push({
-              type: "image",
-              image: attachment.download_url,
-            });
-            attachments.push({
-              id: `${msg.id}-attachment-${index}`,
-              type: "image",
-              name: `Image ${index + 1}`,
-              contentType: "image/*",
-              status: { type: "complete" },
-              content: [
-                { type: "image", image: attachment.download_url },
-              ],
-            });
-          }
+      imageAttachments.forEach((attachment, index) => {
+        if (attachment.download_url) {
+          content.push({
+            type: "image",
+            image: attachment.download_url,
+          });
+          attachments.push({
+            id: `${msg.id}-attachment-${index}`,
+            type: "image",
+            name: `Image ${index + 1}`,
+            contentType: "image/*",
+            status: { type: "complete" },
+            content: [
+              { type: "image", image: attachment.download_url },
+            ],
+          });
         }
-      );
+      });
     }
 
     return {
