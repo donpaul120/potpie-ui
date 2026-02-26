@@ -25,6 +25,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { LinkProviderDialog } from "@/components/auth/LinkProviderDialog";
 import type { SSOLoginResponse } from "@/types/auth";
 import { buildVSCodeCallbackUrl } from "@/lib/auth/vscode-callback";
+import { isGitHubProvider } from "@/lib/provider-config";
 
 export default function Signin() {
   const router = useRouter();
@@ -515,15 +516,17 @@ export default function Signin() {
                 </div>
 
                 {/* Social buttons (interactive, styled to match) */}
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={onGithub}
-                    className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-[#EBEBEB] bg-white hover:bg-black/[0.02] transition-colors"
-                    aria-label="Continue with GitHub"
-                  >
-                    <LucideGithub className="h-5 w-5 text-black" />
-                  </button>
+                <div className={`mt-5 grid gap-3 ${isGitHubProvider() ? "grid-cols-2" : "grid-cols-1"}`}>
+                  {isGitHubProvider() && (
+                    <button
+                      type="button"
+                      onClick={onGithub}
+                      className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-[#EBEBEB] bg-white hover:bg-black/[0.02] transition-colors"
+                      aria-label="Continue with GitHub"
+                    >
+                      <LucideGithub className="h-5 w-5 text-black" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={onGoogle}

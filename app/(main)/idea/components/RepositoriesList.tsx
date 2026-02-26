@@ -2,11 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { LucideGithub, ExternalLink, Check } from "lucide-react";
+import { LucideGithub, LucideGitlab, ExternalLink, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
 import BranchAndRepositoryService from "@/services/BranchAndRepositoryService";
+import { isGitHubProvider, isGitLabProvider, getProviderConfig } from "@/lib/provider-config";
+import { useRouter } from "next/navigation";
 
 interface Repo {
   id: string;
@@ -30,6 +32,9 @@ export default function RepositoriesList({
   const [repos, setRepos] = useState<Repo[]>([]);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const router = useRouter();
+  const providerConfig = getProviderConfig();
+  const ProviderIcon = isGitLabProvider() ? LucideGitlab : LucideGithub;
 
   // Fetch repositories
   const { data: repositories, isLoading, refetch } = useQuery({
@@ -90,7 +95,13 @@ export default function RepositoriesList({
 
   const popupRef = useRef<Window | null>(null);
 
-  const openGithubPopup = () => {
+  const openConnectRepoFlow = () => {
+    if (isGitLabProvider()) {
+      router.push("/link-gitlab");
+      return;
+    }
+
+    // GitHub: open installation popup
     const githubAppUrl =
       "https://github.com/apps/" +
       process.env.NEXT_PUBLIC_GITHUB_APP_NAME +
@@ -119,12 +130,10 @@ export default function RepositoriesList({
     // Poll for popup closure to refetch repos
     intervalRef.current = setInterval(() => {
       if (popupRef.current?.closed) {
-        // Clear interval immediately when popup is closed
         if (intervalRef.current) {
           clearInterval(intervalRef.current);
           intervalRef.current = null;
         }
-        // Refetch after a short delay to allow backend to sync
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
@@ -154,16 +163,16 @@ export default function RepositoriesList({
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-900">
-            Connected Repositories
+            Connected {providerConfig.repoLabel.charAt(0).toUpperCase() + providerConfig.repoLabel.slice(1)}s
           </h3>
           <Button
-            onClick={openGithubPopup}
+            onClick={openConnectRepoFlow}
             size="sm"
             className="gap-2 h-8 text-xs"
             variant="outline"
           >
-            <LucideGithub className="h-3 w-3" />
-            Connect New Repo
+            <ProviderIcon className="h-3 w-3" />
+            Connect New {providerConfig.repoLabel.charAt(0).toUpperCase() + providerConfig.repoLabel.slice(1)}
           </Button>
         </div>
 
@@ -181,7 +190,7 @@ export default function RepositoriesList({
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <LucideGithub className="h-4 w-4 text-gray-600 flex-shrink-0" />
+                    <ProviderIcon className="h-4 w-4 text-gray-600 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {repo.full_name || repo.name}
@@ -230,16 +239,16 @@ export default function RepositoriesList({
           </div>
         ) : (
           <div className="text-center py-6">
-            <LucideGithub className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-500 mb-3">No repositories connected</p>
+            <ProviderIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+            <p className="text-sm text-gray-500 mb-3">No {providerConfig.repoLabel}s connected</p>
             <Button
-              onClick={openGithubPopup}
+              onClick={openConnectRepoFlow}
               size="sm"
               className="gap-2"
               variant="outline"
             >
-              <LucideGithub className="h-4 w-4" />
-              Connect Your First Repo
+              <ProviderIcon className="h-4 w-4" />
+              Connect Your First {providerConfig.repoLabel.charAt(0).toUpperCase() + providerConfig.repoLabel.slice(1)}
             </Button>
           </div>
         )}

@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React, { useRef, useState, useEffect } from "react";
 import { auth } from "@/configs/Firebase-config";
 import { GithubAuthProvider, linkWithPopup } from "firebase/auth";
-import { LucideGithub, LucideCheck, LoaderCircle, ArrowRight, ArrowLeft } from "lucide-react";
+import { LucideGithub, LucideGitlab, LucideCheck, LoaderCircle, ArrowRight, ArrowLeft } from "lucide-react";
 import axios from "axios";
 import { toast } from "@/components/ui/sonner";
 import { getUserFriendlyError } from "@/lib/utils/errorMessages";
 import { testimonials } from "@/lib/utils/testimonials";
 import Image from "next/image";
 import Link from "next/link";
+import { isGitHubProvider, isGitLabProvider, getProviderConfig } from "@/lib/provider-config";
 
 // Helper function to extract company name from email domain
 const extractCompanyNameFromEmail = (email: string): string => {
@@ -261,6 +262,21 @@ const Onboarding = () => {
         }
       }
 
+      // For non-GitHub providers, skip the provider linking step entirely
+      // (or handle provider-specific linking in step 2)
+      if (!isGitHubProvider()) {
+        setOnboardingSubmitted(true);
+        // For PAT-based providers (GitLab, etc.), show step 2 for provider linking
+        // For local/other providers, proceed directly
+        const providerConfig = getProviderConfig();
+        if (providerConfig.usesPAT) {
+          setCurrentStep(2);
+        } else {
+          proceedToNextStep();
+        }
+        return;
+      }
+
       // Check GitHub link status synchronously before setting onboardingSubmitted
       let githubLinked = false;
       try {
@@ -274,7 +290,7 @@ const Onboarding = () => {
               headers: { Authorization: `Bearer ${token}` },
             }
           );
-          
+
           githubLinked = response.data.providers?.some(
             (p: any) => p.provider_type === 'firebase_github'
           ) || false;
@@ -682,7 +698,7 @@ const Onboarding = () => {
                   </>
                 )}
 
-                {/* Step 2: GitHub Linking */}
+                {/* Step 2: Provider Linking */}
                 {currentStep === 2 && isAuthenticated && (
                   <>
                     {/* Back Button */}
@@ -694,71 +710,129 @@ const Onboarding = () => {
                       <span>Back</span>
                     </button>
 
-                    {/* GitHub Logo */}
-                    <div className="flex justify-center mb-6">
-                      <div className="bg-[#022D2C] rounded-full p-6 w-20 h-20 flex items-center justify-center">
-                        <LucideGithub className="text-[#FFF9F5] w-10 h-10" fill="#FFF9F5" />
-                      </div>
-                    </div>
-
-                    {/* Title */}
-                    <h1 className="text-center text-2xl font-medium text-[#022D2C] mb-2">
-                      Connect Your GitHub
-                    </h1>
-
-                    {/* Subtitle */}
-                    <p className="text-center text-sm text-[#656969] mb-6">
-                      Link your GitHub account to get started with repositories
-                    </p>
-
-                    {/* Feature List */}
-                    <div className="bg-[rgba(2,45,44,0.08)] rounded-lg p-4 mb-6 space-y-3">
-                      <div className="flex items-start gap-2">
-                        <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
-                        <span className="text-[#022D2C] text-sm">
-                          Select repositories for your AI agents
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
-                        <span className="text-[#022D2C] text-sm">
-                          Add more repositories anytime from your dashboard
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Link GitHub Button */}
-                    {!hasGithubLinked ? (
+                    {isGitLabProvider() ? (
+                      /* GitLab PAT Linking Step */
                       <>
+                        {/* GitLab Logo */}
+                        <div className="flex justify-center mb-6">
+                          <div className="bg-[#022D2C] rounded-full p-6 w-20 h-20 flex items-center justify-center">
+                            <LucideGitlab className="text-[#FFF9F5] w-10 h-10" />
+                          </div>
+                        </div>
+
+                        {/* Title */}
+                        <h1 className="text-center text-2xl font-medium text-[#022D2C] mb-2">
+                          Connect Your GitLab
+                        </h1>
+
+                        {/* Subtitle */}
+                        <p className="text-center text-sm text-[#656969] mb-6">
+                          Link your GitLab account to get started with projects
+                        </p>
+
+                        {/* Feature List */}
+                        <div className="bg-[rgba(2,45,44,0.08)] rounded-lg p-4 mb-6 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span className="text-[#022D2C] text-sm">
+                              Select projects for your AI agents
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span className="text-[#022D2C] text-sm">
+                              Works with gitlab.com and self-hosted instances
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Link GitLab Button */}
                         <Button
-                          onClick={linkGithub}
+                          onClick={() => router.push("/link-gitlab")}
                           className="w-full h-10 rounded-lg bg-[#022D2C] hover:bg-[#033d3c] text-[#FFF9F5] font-medium flex items-center justify-center gap-2 transition-colors mb-3"
-                          disabled={isLinkingGithub}
                         >
-                          <LucideGithub className="w-5 h-5" />
-                          {isLinkingGithub ? "Linking..." : "Link GitHub Account"}
+                          <LucideGitlab className="w-5 h-5" />
+                          Link GitLab Account
                         </Button>
 
-                        {/* Disclaimer */}
-                        <p className="text-[#656969] text-xs text-center">
-                          We&apos;ll only access repositories you explicitly authorize
-                        </p>
+                        {/* Skip option */}
+                        <button
+                          onClick={proceedToNextStep}
+                          className="w-full text-center text-[#656969] text-xs hover:text-[#022D2C] transition-colors mt-2"
+                        >
+                          Skip for now
+                        </button>
                       </>
                     ) : (
-                      <div className="space-y-4">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                          <p className="text-green-800 font-medium text-sm">
-                            GitHub account linked successfully!
-                          </p>
+                      /* GitHub OAuth Linking Step (default) */
+                      <>
+                        {/* GitHub Logo */}
+                        <div className="flex justify-center mb-6">
+                          <div className="bg-[#022D2C] rounded-full p-6 w-20 h-20 flex items-center justify-center">
+                            <LucideGithub className="text-[#FFF9F5] w-10 h-10" fill="#FFF9F5" />
+                          </div>
                         </div>
-                        <Button
-                          onClick={proceedToNextStep}
-                          className="w-full h-10 rounded-lg bg-[#B7F600] text-[#00291C] hover:bg-[#a7e400] font-medium flex items-center justify-center gap-2 transition-colors"
-                        >
-                          Continue to Dashboard
-                          <ArrowRight className="h-4 w-4" />
-                        </Button>
-                      </div>
+
+                        {/* Title */}
+                        <h1 className="text-center text-2xl font-medium text-[#022D2C] mb-2">
+                          Connect Your GitHub
+                        </h1>
+
+                        {/* Subtitle */}
+                        <p className="text-center text-sm text-[#656969] mb-6">
+                          Link your GitHub account to get started with repositories
+                        </p>
+
+                        {/* Feature List */}
+                        <div className="bg-[rgba(2,45,44,0.08)] rounded-lg p-4 mb-6 space-y-3">
+                          <div className="flex items-start gap-2">
+                            <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span className="text-[#022D2C] text-sm">
+                              Select repositories for your AI agents
+                            </span>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <LucideCheck className="text-[#022D2C] w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span className="text-[#022D2C] text-sm">
+                              Add more repositories anytime from your dashboard
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Link GitHub Button */}
+                        {!hasGithubLinked ? (
+                          <>
+                            <Button
+                              onClick={linkGithub}
+                              className="w-full h-10 rounded-lg bg-[#022D2C] hover:bg-[#033d3c] text-[#FFF9F5] font-medium flex items-center justify-center gap-2 transition-colors mb-3"
+                              disabled={isLinkingGithub}
+                            >
+                              <LucideGithub className="w-5 h-5" />
+                              {isLinkingGithub ? "Linking..." : "Link GitHub Account"}
+                            </Button>
+
+                            {/* Disclaimer */}
+                            <p className="text-[#656969] text-xs text-center">
+                              We&apos;ll only access repositories you explicitly authorize
+                            </p>
+                          </>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                              <p className="text-green-800 font-medium text-sm">
+                                GitHub account linked successfully!
+                              </p>
+                            </div>
+                            <Button
+                              onClick={proceedToNextStep}
+                              className="w-full h-10 rounded-lg bg-[#B7F600] text-[#00291C] hover:bg-[#a7e400] font-medium flex items-center justify-center gap-2 transition-colors"
+                            >
+                              Continue to Dashboard
+                              <ArrowRight className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     {/* Footer */}
