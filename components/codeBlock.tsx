@@ -4,6 +4,7 @@ import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LucideCopy, LucideCopyCheck } from "lucide-react";
+import { copyToClipboard } from "@/lib/utils/clipboard";
 
 interface MyCodeBlockProps {
   code: string;
@@ -14,9 +15,10 @@ function MyCodeBlock({ code, language }: MyCodeBlockProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code || "");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyToClipboard(code || "").finally(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (

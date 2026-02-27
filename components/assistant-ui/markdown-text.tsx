@@ -7,6 +7,7 @@ import { Prism as SyntaxHighlighterLib } from "react-syntax-highlighter";
 import { coldarkCold } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { MermaidDiagram } from "@/components/chat/MermaidDiagram";
 import { useState, type FC, type ReactNode, memo } from "react";
+import { copyToClipboard } from "@/lib/utils/clipboard";
 import { Button } from "@/components/ui/button";
 import { LucideCopy, LucideCopyCheck, ExternalLinkIcon } from "lucide-react";
 import type { SyntaxHighlighterProps, CodeHeaderProps } from "@assistant-ui/react-markdown";
@@ -17,9 +18,10 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyToClipboard(code).finally(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
