@@ -139,13 +139,17 @@ export default function NewChatPage() {
   }, [allRepositories]);
 
   const selectedRepoName = useMemo(() => {
-    if (!state.selectedRepo || !repositories.length) return null;
-    const selectedRepoData = repositories.find(
+    if (!state.selectedRepo) return null;
+    // Prefer state.linkedRepos (protected copy that survives search-clear refetches).
+    // Fall back to live repositories in case linkedRepos hasn't synced yet.
+    const list = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+    if (!list.length) return null;
+    const selectedRepoData = list.find(
       (repo: Repo) => repo.id?.toString() === state.selectedRepo
     );
     if (!selectedRepoData) return null;
     return selectedRepoData.full_name || selectedRepoData.name || null;
-  }, [state.selectedRepo, repositories]);
+  }, [state.selectedRepo, state.linkedRepos, repositories]);
 
   const { data: branches, isLoading: branchesLoading, error: branchesError, refetch: refetchBranches } = useQuery({
     queryKey: ["user-branch", selectedRepoName, branchSearch],
@@ -297,7 +301,8 @@ export default function NewChatPage() {
         loading: false,
       }));
       if (state.selectedRepo) {
-        const selectedRepoData = repositories.find(
+        const repoList = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+        const selectedRepoData = repoList.find(
           (repo: Repo) => repo.id?.toString() === state.selectedRepo
         );
         if (selectedRepoData) {
@@ -373,7 +378,8 @@ export default function NewChatPage() {
         repoName = variables.repoName;
         branchName = variables.branchName;
       } else if (state.selectedRepo) {
-        const selectedRepoData = repositories.find(
+        const repoList = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+        const selectedRepoData = repoList.find(
           (repo: Repo) => repo.id?.toString() === state.selectedRepo
         );
         if (selectedRepoData) {
@@ -450,7 +456,8 @@ export default function NewChatPage() {
       _data: unknown,
       variables: { projectId: string; repoId: string }
     ) => {
-      const selectedRepoData = repositories.find(
+      const repoList = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+      const selectedRepoData = repoList.find(
         (repo: Repo) => repo.id?.toString() === variables.repoId
       );
       if (selectedRepoData) {
@@ -842,7 +849,8 @@ export default function NewChatPage() {
 
     // If a repository is selected from the dropdown, use it
     if (state.selectedRepo) {
-      const selectedRepoData = repositories.find(
+      const repoList = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+      const selectedRepoData = repoList.find(
         (repo: Repo) => repo.id?.toString() === state.selectedRepo
       );
       if (!selectedRepoData) {
@@ -1002,7 +1010,8 @@ export default function NewChatPage() {
       toast.error("Please select an agent (Ask, Build, Code, or Debug)");
       return;
     }
-    const selectedRepoData = repositories.find(
+    const repoList = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+    const selectedRepoData = repoList.find(
       (repo: Repo) => repo.id?.toString() === state.selectedRepo
     );
     const repoName =
@@ -1112,7 +1121,8 @@ export default function NewChatPage() {
         setState((prev) => ({ ...prev, loading: false }));
         return;
       }
-      const selectedRepoData = repositories.find(
+      const repoListBuild = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+      const selectedRepoData = repoListBuild.find(
         (repo: Repo) => repo.id?.toString() === state.selectedRepo
       );
       if (!selectedRepoData) {
@@ -1186,7 +1196,8 @@ export default function NewChatPage() {
         setState((prev) => ({ ...prev, loading: false }));
         return;
       }
-      const selectedRepoData = repositories.find(
+      const repoListAsk = state.linkedRepos.length > 0 ? state.linkedRepos : repositories;
+      const selectedRepoData = repoListAsk.find(
         (repo: Repo) => repo.id?.toString() === state.selectedRepo
       );
       if (!selectedRepoData) {
