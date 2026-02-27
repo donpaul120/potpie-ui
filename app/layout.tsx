@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import LayoutProviders from "@/providers/LayoutProviders";
+import { ClipboardPolyfill } from "@/components/ClipboardPolyfill";
 import { GeistSans } from "geist/font/sans";
 
 export const metadata: Metadata = {
@@ -29,6 +30,7 @@ export default function RootLayout({
           GeistSans.className
         )}
       >
+        <ClipboardPolyfill />
         <LayoutProviders>{children}</LayoutProviders>
         <Toaster />
       </body>
