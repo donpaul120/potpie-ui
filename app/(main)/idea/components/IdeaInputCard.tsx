@@ -480,7 +480,6 @@ export default function IdeaInputCard({
                     {selectedRepoData
                       ? selectedRepoData.full_name || selectedRepoData.name
                       : (isGitLabProvider() ? "Enter a GitLab Project URL" : "Enter a GitHub Repository URL")}
-                      : "Select Repo"}
                   </span>
                   <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500" />
                 </button>
