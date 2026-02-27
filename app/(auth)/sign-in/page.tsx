@@ -16,7 +16,7 @@ import { testimonials } from "@/lib/utils/testimonials";
 import { isNewUser, deleteUserAndSignOut } from "@/lib/utils/emailValidation";
 import AuthService from "@/services/AuthService";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Github } from "lucide-react";
 import Image from "next/image";
 import React from "react";
 import Link from "next/link";
@@ -507,7 +507,7 @@ export default function Signin() {
                       className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-[#EBEBEB] bg-white hover:bg-black/[0.02] transition-colors"
                       aria-label="Continue with GitHub"
                     >
-                      <LucideGithub className="h-5 w-5 text-black" />
+                      <Github className="h-5 w-5 text-black" />
                     </button>
                   )}
                   <button
