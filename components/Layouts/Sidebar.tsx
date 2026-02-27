@@ -241,10 +241,7 @@ export function AppSidebar() {
                       onClick={link.showProModal || isWorkflowsLink ? handleClick : link.handleTrack ? handleTrack : undefined}
                     >
                       {link.showProModal || isWorkflowsLink ? (
-                        <button
-                          className="flex gap-2 items-center w-full"
-                          onClick={handleClick}
-                        >
+                        <div className="flex gap-2 items-center w-full">
                           {link.icons && <span>{link.icons}</span>}
                           <span>{link.title}</span>
                           {link.description && (
@@ -252,7 +249,7 @@ export function AppSidebar() {
                               {link.description}
                             </span>
                           )}
-                        </button>
+                        </div>
                       ) : (
                         <Link
                           href={link.href}
