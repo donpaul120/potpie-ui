@@ -711,14 +711,15 @@ export default class ChatService {
     conversationId: string,
     start: number,
     limit: number,
-    order: "asc" | "desc" = "asc"
+    order: "asc" | "desc" = "asc",
+    slim: boolean = true
   ) {
     const headers = await getHeaders();
     const response = await axios.get(
       `${process.env.NEXT_PUBLIC_CONVERSATION_BASE_URL}/api/v1/conversations/${conversationId}/messages`,
       {
         headers,
-        params: { start, limit, order },
+        params: { start, limit, order, slim },
       }
     );
 
