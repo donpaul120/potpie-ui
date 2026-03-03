@@ -51,7 +51,9 @@ interface ThreadProps {
   conversation_id: string;
   isSessionResuming: boolean;
   isBackgroundTaskActive: boolean;
-  hasPendingMessage?: boolean; // New prop to detect pending message
+  hasPendingMessage?: boolean;
+  hasMoreMessages?: boolean;
+  onLoadEarlier?: () => void;
 }
 
 export const Thread: FC<ThreadProps> = ({
@@ -62,6 +64,8 @@ export const Thread: FC<ThreadProps> = ({
   isSessionResuming,
   isBackgroundTaskActive,
   hasPendingMessage = false,
+  hasMoreMessages = false,
+  onLoadEarlier,
 }) => {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const runtime = useThreadRuntime();
@@ -179,6 +183,16 @@ export const Thread: FC<ThreadProps> = ({
             <ThreadPrimitive.If empty={false}>
               <ThreadPrimitive.Viewport className="flex h-[calc(100%-80px)] flex-col items-center bg-background overflow-hidden overflow-y-scroll scroll-smooth inset-0 from-white via-transparent to-white [mask-image:linear-gradient(to_bottom,transparent_0%,white_5%,white_95%,transparent_100%)] thread-viewport">
                 <div className="pb-36 bg-inherit min-w-96 w-full">
+                  {hasMoreMessages && onLoadEarlier && (
+                    <div className="flex justify-center pt-4 pb-2">
+                      <button
+                        onClick={onLoadEarlier}
+                        className="text-sm text-muted-foreground hover:text-foreground border border-border rounded-md px-4 py-1.5 transition-colors"
+                      >
+                        Load earlier messages
+                      </button>
+                    </div>
+                  )}
                   <ThreadPrimitive.Messages
                     components={{
                       UserMessage: userMessage,

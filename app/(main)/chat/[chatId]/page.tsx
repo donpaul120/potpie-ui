@@ -61,7 +61,7 @@ const ChatV2 = () => {
 
   // Call hook before any early returns
   // Returns runtime + session states for background task handling
-  const { runtime, isBackgroundTaskActive } = useChatRuntime(params.chatId);
+  const { runtime, isBackgroundTaskActive, hasMoreMessages, loadEarlierMessages } = useChatRuntime(params.chatId);
 
   // Get pending message from Redux
   const pendingMessage = useSelector((state: RootState) => state.chat.pendingMessage);
@@ -435,6 +435,8 @@ const ChatV2 = () => {
             isSessionResuming={activeSession !== null}
             isBackgroundTaskActive={isBackgroundTaskActive}
             hasPendingMessage={!!pendingMessage && !hasSentPendingMessage.current}
+            hasMoreMessages={hasMoreMessages}
+            onLoadEarlier={loadEarlierMessages}
           />
         </AssistantRuntimeProvider>
       </div>
