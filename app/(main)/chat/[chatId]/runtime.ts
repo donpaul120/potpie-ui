@@ -603,7 +603,7 @@ const convertToThreadMessage = (msg: BackendMessage): ThreadMessage => {
   }
 };
 
-const HISTORY_PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 20;
 
 // Create Thread History Adapter
 // This adapter handles loading historical messages and persisting new messages
