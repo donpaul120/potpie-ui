@@ -601,9 +601,15 @@ const convertToThreadMessage = (msg: BackendMessage): ThreadMessage => {
   }
 };
 
+const HISTORY_PAGE_SIZE = 50;
+
 // Create Thread History Adapter
 // This adapter handles loading historical messages and persisting new messages
-const createHistoryAdapter = (chatId: string): ThreadHistoryAdapter => {
+const createHistoryAdapter = (
+  chatId: string,
+  limit: number,
+  onHasMore: (hasMore: boolean) => void
+): ThreadHistoryAdapter => {
   return {
     async load() {
       if (!chatId) {
@@ -611,7 +617,10 @@ const createHistoryAdapter = (chatId: string): ThreadHistoryAdapter => {
       }
 
       try {
-        const messages = await ChatService.loadMessages(chatId, 0, 1000);
+        // Fetch the latest `limit` messages in descending order, then reverse for display
+        const messages = await ChatService.loadMessages(chatId, 0, limit, "desc");
+        onHasMore(messages.length === limit);
+        messages.reverse();
         const convertedMessages = messages.map(convertToThreadMessage);
 
         return {
@@ -740,13 +749,21 @@ export function useChatRuntime(
     );
   }, [chatId]); // Only recreate when chatId changes
 
-  // Create the history adapter
+  // Pagination state for history loading
+  const [historyLimit, setHistoryLimit] = useState(HISTORY_PAGE_SIZE);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+
+  const loadEarlierMessages = useCallback(() => {
+    setHistoryLimit((prev) => prev + HISTORY_PAGE_SIZE);
+  }, []);
+
+  // Create the history adapter — recreated when chatId or historyLimit changes
   const historyAdapter = useMemo(() => {
     if (!chatId) {
       return undefined;
     }
-    return createHistoryAdapter(chatId);
-  }, [chatId]);
+    return createHistoryAdapter(chatId, historyLimit, setHasMoreMessages);
+  }, [chatId, historyLimit]);
 
   // Create the attachments adapter
   const attachmentsAdapter = useMemo(() => {
@@ -938,6 +955,8 @@ export function useChatRuntime(
   return {
     runtime,
     isBackgroundTaskActive,
+    hasMoreMessages,
+    loadEarlierMessages,
   };
 }
 
