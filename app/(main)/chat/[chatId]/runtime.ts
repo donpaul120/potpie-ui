@@ -71,6 +71,8 @@ interface StreamingState {
 export interface ChatRuntimeResult {
   runtime: ReturnType<typeof useLocalRuntime>;
   isBackgroundTaskActive: boolean;
+  hasMoreMessages: boolean;
+  loadEarlierMessages: () => void;
 }
 
 // Create the adapter that bridges our Redis backend to assistant-ui
